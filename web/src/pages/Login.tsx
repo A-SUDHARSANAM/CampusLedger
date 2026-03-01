@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, Lock, Mail, ChevronRight, UserCircle, Microscope, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -164,6 +164,10 @@ export function Login() {
                             )}
                         </button>
                     </form>
+
+                    <p className="mt-6 text-center text-slate-500 font-medium text-sm">
+                        New personnel? <Link to="/register" className="text-[#3b82f6] font-bold hover:underline">Enroll Now</Link>
+                    </p>
                 </div>
             </div>
 

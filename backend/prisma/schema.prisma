@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -20,4 +21,36 @@ model User {
   role      Role     @default(Admin)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relations to role-specific profiles
+  adminProfile       AdminProfile?
+  labInchargeProfile LabInchargeProfile?
+  serviceProfile     ServiceProfile?
+}
+
+model AdminProfile {
+  id         String @id @default(uuid())
+  employeeId String @unique
+  department String
+  supervisor String
+  user       User   @relation(fields: [userId], references: [id])
+  userId     String @unique
+}
+
+model LabInchargeProfile {
+  id         String @id @default(uuid())
+  employeeId String @unique
+  labName    String
+  department String
+  user       User   @relation(fields: [userId], references: [id])
+  userId     String @unique
+}
+
+model ServiceProfile {
+  id             String @id @default(uuid())
+  employeeId     String @unique
+  specialization String
+  region         String
+  user           User   @relation(fields: [userId], references: [id])
+  userId         String @unique
 }

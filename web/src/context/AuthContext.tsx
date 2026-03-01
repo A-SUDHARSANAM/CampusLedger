@@ -5,6 +5,7 @@ type Role = 'Admin' | 'Lab Incharge' | 'Service' | null;
 interface AuthContextType {
     role: Role;
     login: (selectedRole: Role, email?: string, password?: string) => Promise<boolean | void>;
+    register: (name: string, email: string, password: string, role: string) => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
 }
@@ -47,6 +48,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const register = async (name: string, email: string, password: string, role: string) => {
+        try {
+            const response = await fetch('http://localhost:5000/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password, role }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Registration failed');
+            }
+        } catch (error) {
+            console.error('Registration error:', error);
+            throw error;
+        }
+    };
+
     const logout = () => {
         setRole(null);
         localStorage.removeItem('userRole');
@@ -56,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const isAuthenticated = !!role;
 
     return (
-        <AuthContext.Provider value={{ role, login, logout, isAuthenticated }}>
+        <AuthContext.Provider value={{ role, login, register, logout, isAuthenticated }}>
             {children}
         </AuthContext.Provider>
     );
