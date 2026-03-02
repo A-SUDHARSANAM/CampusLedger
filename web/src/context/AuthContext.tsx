@@ -1,89 +1,82 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useEffect, useMemo, useState } from 'react';
+import { canPerform, type PermissionAction } from '../auth/permissions';
+import { api } from '../services/api';
+import type { AuthState, Role, User } from '../types/auth';
 
-type Role = 'Admin' | 'Lab Incharge' | 'Service' | null;
+type AuthContextType = {
+  user: User | null;
+  token: string | null;
+  role: Role | null;
+  isAuthenticated: boolean;
+  isBootstrapping: boolean;
+  login: (email: string, password: string, selectedRole?: Role) => Promise<User>;
+  logout: () => void;
+  hasPermission: (action: PermissionAction) => boolean;
+};
 
-interface AuthContextType {
-    role: Role;
-    login: (selectedRole: Role, email?: string, password?: string) => Promise<boolean | void>;
-    register: (name: string, email: string, password: string, role: string) => Promise<void>;
-    logout: () => void;
-    isAuthenticated: boolean;
-}
+const STORAGE_KEY = 'campusledger_auth_state';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [role, setRole] = useState<Role>(() => {
-        const savedRole = localStorage.getItem('userRole');
-        return (savedRole as Role) || null;
-    });
-
-    const login = async (selectedRole: Role, email?: string, password?: string) => {
-        try {
-            if (email && password) {
-                const response = await fetch('http://localhost:5000/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password }),
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    setRole(data.user.role);
-                    localStorage.setItem('userRole', data.user.role);
-                    localStorage.setItem('token', data.token);
-                    return true;
-                } else {
-                    throw new Error(data.message || 'Authentication failed');
-                }
-            } else {
-                setRole(selectedRole);
-                if (selectedRole) {
-                    localStorage.setItem('userRole', selectedRole);
-                }
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            throw error;
-        }
+function loadStoredAuthState(): AuthState {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return { token: null, user: null };
+  try {
+    const parsed = JSON.parse(raw) as AuthState;
+    return {
+      token: parsed.token ?? null,
+      user: parsed.user ?? null
     };
+  } catch {
+    return { token: null, user: null };
+  }
+}
 
-    const register = async (name: string, email: string, password: string, role: string) => {
-        try {
-            const response = await fetch('http://localhost:5000/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, email, password, role }),
-            });
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.message || 'Registration failed');
-            }
-        } catch (error) {
-            console.error('Registration error:', error);
-            throw error;
-        }
-    };
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<AuthState>(() => loadStoredAuthState());
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
 
-    const logout = () => {
-        setRole(null);
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('token');
-    };
-
-    const isAuthenticated = !!role;
-
-    return (
-        <AuthContext.Provider value={{ role, login, register, logout, isAuthenticated }}>
-            {children}
-        </AuthContext.Provider>
-    );
-};
-
-export const useAuth = () => {
-    const context = useContext(AuthContext);
-    if (context === undefined) {
-        throw new Error('useAuth must be used within an AuthProvider');
+  useEffect(() => {
+    if (state.token) {
+      api.setToken(state.token);
     }
-    return context;
-};
+    setIsBootstrapping(false);
+  }, [state.token]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [state]);
+
+  const login = async (email: string, password: string, selectedRole?: Role) => {
+    const { token, user } = await api.login(email, password, selectedRole);
+    api.setToken(token);
+    setState({ token, user });
+    return user;
+  };
+
+  const logout = () => {
+    api.setToken(null);
+    setState({ token: null, user: null });
+  };
+
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user: state.user,
+      token: state.token,
+      role: state.user?.role ?? null,
+      isAuthenticated: !!state.user && !!state.token,
+      isBootstrapping,
+      login,
+      logout,
+      hasPermission: (action) => {
+        if (!state.user) return false;
+        return canPerform(state.user.role, action);
+      }
+    }),
+    [state, isBootstrapping]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export { AuthContext };

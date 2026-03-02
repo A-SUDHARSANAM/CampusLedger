@@ -1,179 +1,219 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, Lock, Mail, ChevronRight, UserCircle, Microscope, Settings } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, FlaskConical, GraduationCap, Shield, Wrench } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import type { Role } from '../types/auth';
+import { ROLE_HOME_ROUTE } from '../routes/routeConfig';
+
+const ROLE_OPTIONS: {
+  id: Role;
+  title: string;
+  icon: React.ReactNode;
+  pillClass: string;
+  demoEmail: string;
+  demoPassword: string;
+}[] = [
+  {
+    id: 'admin',
+    title: 'Administrator',
+    icon: <Shield size={18} />,
+    pillClass: 'admin',
+    demoEmail: 'admin@campus.edu',
+    demoPassword: 'admin123'
+  },
+  {
+    id: 'lab',
+    title: 'Lab Incharge',
+    icon: <FlaskConical size={18} />,
+    pillClass: 'lab',
+    demoEmail: 'lab@campus.edu',
+    demoPassword: 'lab123'
+  },
+  {
+    id: 'service',
+    title: 'Service Staff',
+    icon: <Wrench size={18} />,
+    pillClass: 'service',
+    demoEmail: 'service@campus.edu',
+    demoPassword: 'service123'
+  }
+];
 
 export function Login() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [selectedRole, setSelectedRole] = useState<'Admin' | 'Lab Incharge' | 'Service'>('Admin');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
-    const navigate = useNavigate();
-    const { login } = useAuth();
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setError('');
+  const [isRegister, setIsRegister] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role>('admin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
-        try {
-            await login(selectedRole, email, password);
-            navigate('/');
-        } catch (err: any) {
-            setError(err.message || 'Access Denied: Terminal hand-shake failed.');
-        } finally {
-            setIsLoading(false);
+  const setRoleWithDemoCreds = (role: Role) => {
+    const roleMeta = ROLE_OPTIONS.find((option) => option.id === role);
+    setSelectedRole(role);
+    if (!isRegister && roleMeta) {
+      setEmail(roleMeta.demoEmail);
+      setPassword(roleMeta.demoPassword);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitted(true);
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (isRegister) {
+        if (!fullName.trim()) {
+          throw new Error('Please enter your full name.');
         }
-    };
+        if (!email.trim() || !password.trim()) {
+          throw new Error('Please complete all fields.');
+        }
+      }
 
-    const roles = [
-        { id: 'Admin', title: 'System Administrator', icon: <UserCircle className="w-5 h-5" />, desc: 'Full institutional control' },
-        { id: 'Lab Incharge', title: 'Lab Management', icon: <Microscope className="w-5 h-5" />, desc: 'Asset & maintenance logs' },
-        { id: 'Service', title: 'Service & Maintenance', icon: <Settings className="w-5 h-5" />, desc: 'Field terminal access' },
-    ];
+      const user = await login(email, password, selectedRole);
+      navigate(ROLE_HOME_ROUTE[user.role], { replace: true });
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Authentication failed. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    return (
-        <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 relative overflow-hidden">
-            {/* Background Decorative Elements */}
-            <div className="absolute top-0 left-0 w-full h-1/2 bg-[#1e293b] skew-y-3 -translate-y-24 z-0"></div>
-
-            <div className="z-10 w-full max-w-[1000px] grid lg:grid-cols-2 gap-8 bg-white rounded-[32px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-500">
-                {/* Left Side: Branding */}
-                <div className="hidden lg:flex flex-col justify-between p-12 bg-[#3b82f6] text-white">
-                    <div>
-                        <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-md">
-                            <ShieldCheck className="w-10 h-10 text-white" />
-                        </div>
-                        <h1 className="text-4xl font-black mb-4 tracking-tight leading-tight">Campus Ledger<br />Terminal v4.8</h1>
-                        <p className="text-blue-100 text-lg font-medium opacity-80 leading-relaxed">
-                            Institutional secure gateway for asset tracking, inventory management, and predictive maintenance.
-                        </p>
-                    </div>
-
-                    <div className="space-y-6">
-                        <div className="flex items-center gap-4 bg-white/10 p-4 rounded-2xl backdrop-blur-sm">
-                            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                                <Lock className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <p className="text-xs uppercase font-black tracking-widest opacity-60">Security Protocol</p>
-                                <p className="font-bold">AES-256 Encrypted Tunnel</p>
-                            </div>
-                        </div>
-                        <p className="text-xs opacity-50 font-medium">© 2026 Main City University • All Rights Reserved</p>
-                    </div>
-                </div>
-
-                {/* Right Side: Login Form */}
-                <div className="p-8 lg:p-12">
-                    <div className="mb-8">
-                        <h2 className="text-2xl font-black text-[#1e293b] mb-2 tracking-tight">System Authentication</h2>
-                        <p className="text-slate-500 font-medium text-sm">Select your institutional role to initialize session.</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 mb-8">
-                        {roles.map((role) => (
-                            <button
-                                key={role.id}
-                                type="button"
-                                onClick={() => setSelectedRole(role.id as any)}
-                                className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all duration-200 text-left group ${selectedRole === role.id
-                                    ? 'border-[#3b82f6] bg-[#eff6ff]'
-                                    : 'border-slate-100 hover:border-slate-200'
-                                    }`}
-                            >
-                                <div className={`p-3 rounded-xl transition-colors ${selectedRole === role.id ? 'bg-[#3b82f6] text-white' : 'bg-slate-50 text-slate-400 group-hover:bg-slate-100'
-                                    }`}>
-                                    {role.icon}
-                                </div>
-                                <div>
-                                    <p className={`font-bold text-sm ${selectedRole === role.id ? 'text-[#3b82f6]' : 'text-[#1e293b]'}`}>
-                                        {role.title}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400 font-medium leading-none mt-1 uppercase tracking-wider italic">
-                                        {role.desc}
-                                    </p>
-                                </div>
-                                {selectedRole === role.id && (
-                                    <div className="ml-auto w-5 h-5 bg-[#3b82f6] rounded-full flex items-center justify-center animate-in zoom-in">
-                                        <ShieldCheck className="w-3 h-3 text-white" />
-                                    </div>
-                                )}
-                            </button>
-                        ))}
-                    </div>
-
-                    {error && (
-                        <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-xl flex items-center gap-3 animate-in slide-in-from-top-2 duration-300">
-                            <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center shrink-0">
-                                <ShieldCheck className="w-5 h-5 text-red-500" />
-                            </div>
-                            <p className="text-sm font-bold text-red-900 leading-tight">
-                                {error}
-                            </p>
-                        </div>
-                    )}
-
-                    <form onSubmit={handleLogin} className="space-y-5">
-                        <div className="space-y-2">
-                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Work Email</label>
-                            <div className="relative group">
-                                <Mail className="absolute left-4 top-4 w-5 h-5 text-slate-400 group-focus-within:text-[#3b82f6] transition-colors" />
-                                <input
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="rajesh.kumar@campus.edu"
-                                    className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-[#3b82f6] outline-none transition-all font-medium text-[#1e293b]"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <div className="flex justify-between items-center ml-1">
-                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Pin / Password</label>
-                                <button type="button" className="text-[10px] font-black text-[#3b82f6] uppercase tracking-wider">Recovery Options</button>
-                            </div>
-                            <div className="relative group">
-                                <Lock className="absolute left-4 top-4 w-5 h-5 text-slate-400 group-focus-within:text-[#3b82f6] transition-colors" />
-                                <input
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-[#3b82f6] outline-none transition-all font-medium text-[#1e293b]"
-                                />
-                            </div>
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full bg-[#3b82f6] text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-[#2563eb] transition-all active:scale-[0.98] shadow-lg shadow-blue-200 disabled:opacity-50"
-                        >
-                            {isLoading ? (
-                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                            ) : (
-                                <>
-                                    Initialize Session
-                                    <ChevronRight className="w-4 h-4 ml-1" />
-                                </>
-                            )}
-                        </button>
-                    </form>
-
-                    <p className="mt-6 text-center text-slate-500 font-medium text-sm">
-                        New personnel? <Link to="/register" className="text-[#3b82f6] font-bold hover:underline">Enroll Now</Link>
-                    </p>
-                </div>
-            </div>
-
-            <div className="mt-8 text-center text-slate-400 font-bold text-[10px] uppercase tracking-widest z-10">
-                Institutional Access Only • Authorized Personnel Only
-            </div>
+  return (
+    <div className="auth-page">
+      <div className="auth-wrap">
+        <div className="brand">
+          <div className="brand-badge">
+            <GraduationCap size={36} />
+          </div>
+          <h1>CampusLedger</h1>
+          <p>Asset &amp; Inventory Management System</p>
         </div>
-    );
+
+        <div className="auth-tabs">
+          <button className={`btn secondary-btn tab-btn ${!isRegister ? 'active' : ''}`} onClick={() => setIsRegister(false)} type="button">
+            Sign In
+          </button>
+          <button className={`btn secondary-btn tab-btn ${isRegister ? 'active' : ''}`} onClick={() => setIsRegister(true)} type="button">
+            Register
+          </button>
+        </div>
+
+        <div className="auth-card">
+          <h2>{isRegister ? 'Create Account' : 'Sign In'}</h2>
+          <p className="auth-subtitle">
+            {isRegister ? 'Register a new account to get started' : 'Enter your credentials to access the dashboard'}
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            {isRegister ? (
+              <div className="form-field">
+                <label className="label" htmlFor="fullName">
+                  Full Name
+                </label>
+                <input
+                  className={`input ${submitted && !fullName.trim() ? 'input-error' : ''}`}
+                  id="fullName"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  placeholder="Enter your full name"
+                  autoComplete="name"
+                />
+                {submitted && !fullName.trim() ? <p className="field-error-text">Full name is required.</p> : null}
+              </div>
+            ) : (
+              <p className="quick-label">Quick login as:</p>
+            )}
+
+            <div className="role-grid">
+              {ROLE_OPTIONS.map((role) => (
+                <button
+                  key={role.id}
+                  className={`role-btn ${selectedRole === role.id ? 'active' : ''}`}
+                  onClick={() => setRoleWithDemoCreds(role.id)}
+                  type="button"
+                >
+                  <span className={`role-pill ${role.pillClass}`}>{role.icon}</span>
+                  <span>{role.title}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="form-field">
+              <label className="label" htmlFor="email">
+                Email
+              </label>
+              <input
+                className={`input ${submitted && !email.trim() ? 'input-error' : ''}`}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Enter your email"
+                autoComplete="email"
+                required
+              />
+              {submitted && !email.trim() ? <p className="field-error-text">Email is required.</p> : null}
+            </div>
+
+            <div className="form-field">
+              <label className="label" htmlFor="password">
+                Password
+              </label>
+              <div className="password-wrap">
+                <input
+                  className={`input ${submitted && !password.trim() ? 'input-error' : ''}`}
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder={isRegister ? 'Create a password' : 'Enter your password'}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
+                  required
+                />
+                <button
+                  className="password-toggle"
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword((value) => !value)}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {submitted && !password.trim() ? <p className="field-error-text">Password is required.</p> : null}
+            </div>
+
+            <button className="btn primary-btn" disabled={isLoading} type="submit">
+              {isLoading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
+            </button>
+
+            {error ? <p className="error-text">{error}</p> : null}
+          </form>
+
+          {!isRegister ? (
+            <div className="demo-box">
+              <div>Demo Credentials:</div>
+              <div>Administrator: admin@campus.edu / admin123</div>
+              <div>Lab Incharge: lab@campus.edu / lab123</div>
+              <div>Service Staff: service@campus.edu / service123</div>
+            </div>
+          ) : null}
+        </div>
+
+        <p className="auth-footer">(c) 2026 CampusLedger - Smart Campus Asset Management</p>
+      </div>
+    </div>
+  );
 }

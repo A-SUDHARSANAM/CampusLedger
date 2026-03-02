@@ -1,48 +1,81 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
 import { DashboardLayout } from './layouts/DashboardLayout';
-import { Dashboard } from './pages/Dashboard';
-import { Profile } from './pages/Profile';
-import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
-import { Register } from './pages/Register';
-import { AuthProvider, useAuth } from './context/AuthContext';
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  return <>{children}</>;
-}
+import { NotFound } from './pages/NotFound';
+import { Settings } from './pages/Settings';
+import { Unauthorized } from './pages/Unauthorized';
+import { AdminAssetsPage } from './pages/admin/AdminAssetsPage';
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminLabsPage } from './pages/admin/AdminLabsPage';
+import { AdminMaintenancePage } from './pages/admin/AdminMaintenancePage';
+import { AdminReportsPage } from './pages/admin/AdminReportsPage';
+import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { LabAssetsPage } from './pages/lab/LabAssetsPage';
+import { LabDashboardPage } from './pages/lab/LabDashboardPage';
+import { LabMaintenancePage } from './pages/lab/LabMaintenancePage';
+import { ServiceDashboardPage } from './pages/service/ServiceDashboardPage';
+import { ServiceTasksPage } from './pages/service/ServiceTasksPage';
 
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/unauthorized" element={<Unauthorized />} />
+
+        <Route element={<ProtectedRoute />}>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+
           <Route
-            path="/"
+            path="/admin"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <DashboardLayout />
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
-            <Route path="profile" element={<Profile />} />
+            <Route path="dashboard" element={<AdminDashboardPage />} />
+            <Route path="assets" element={<AdminAssetsPage />} />
+            <Route path="labs" element={<AdminLabsPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="maintenance" element={<AdminMaintenancePage />} />
+            <Route path="reports" element={<AdminReportsPage />} />
             <Route path="settings" element={<Settings />} />
-            <Route path="assets" element={<div className="p-8">Assets Management Placeholder</div>} />
-            <Route path="assets/new" element={<div className="p-8">Add Asset Placeholder</div>} />
-            <Route path="procurement" element={<div className="p-8">Procurement Placeholder</div>} />
-            <Route path="maintenance" element={<div className="p-8">Maintenance Placeholder</div>} />
-            <Route path="locations" element={<div className="p-8">Locations Placeholder</div>} />
-            <Route path="reports" element={<div className="p-8">Reports Placeholder</div>} />
-            <Route path="users" element={<div className="p-8">Users & Roles Placeholder</div>} />
           </Route>
-        </Routes>
-      </BrowserRouter>
+
+          <Route
+            path="/lab"
+            element={
+              <ProtectedRoute allowedRoles={['lab']}>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="dashboard" element={<LabDashboardPage />} />
+            <Route path="assets" element={<LabAssetsPage />} />
+            <Route path="maintenance" element={<LabMaintenancePage />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+
+          <Route
+            path="/service"
+            element={
+              <ProtectedRoute allowedRoles={['service']}>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="dashboard" element={<ServiceDashboardPage />} />
+            <Route path="tasks" element={<ServiceTasksPage />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Route>
+
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </AuthProvider>
   );
 }
