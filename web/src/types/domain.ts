@@ -53,3 +53,56 @@ export type MaintenanceRequest = {
   issue: string;
   history: MaintenanceHistoryEntry[];
 };
+
+export type BorrowStatus = 'Borrowed' | 'Returned' | 'Late Return' | 'Damaged';
+export type ProcurementCategory = 'Purchase' | 'Service';
+export type ProcurementStatus = 'Pending Admin Approval' | 'Approved by Admin' | 'Sent to Vendor' | 'Accepted by Vendor' | 'Rejected by Vendor';
+
+export type ElectronicsCatalogItem = {
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  unitCost: number;
+  warrantyMonths: number;
+  inStock: number;
+};
+
+export type BorrowItem = {
+  itemId: string;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitCost: number;
+  warrantyMonths: number;
+};
+
+export type BorrowRecord = {
+  id: string;
+  borrowId: string;
+  billNo: string;
+  invoiceNo: string;
+  labId: string;
+  studentName: string;
+  projectName: string;
+  createdDate: string;
+  dueDate: string;
+  returnedDate?: string;
+  status: BorrowStatus;
+  issueUpdates: string[];
+  fineAmount: number;
+  items: BorrowItem[];
+};
+
+export type ProcurementRequest = {
+  id: string;
+  requestNo: string;
+  requestedByLabId: string;
+  requestedByLabName: string;
+  category: ProcurementCategory;
+  createdDate: string;
+  status: ProcurementStatus;
+  vendorName?: string;
+  notes?: string;
+  items: BorrowItem[];
+};

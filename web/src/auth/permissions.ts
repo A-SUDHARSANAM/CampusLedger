@@ -8,7 +8,14 @@ export type PermissionAction =
   | 'asset:view_lab_only'
   | 'maintenance:raise'
   | 'maintenance:assign'
-  | 'maintenance:update_status';
+  | 'maintenance:update_status'
+  | 'borrow:create'
+  | 'borrow:return'
+  | 'borrow:view'
+  | 'procurement:create'
+  | 'procurement:approve'
+  | 'procurement:send_to_vendor'
+  | 'procurement:vendor_update';
 
 const rolePermissions: Record<Role, PermissionAction[]> = {
   admin: [
@@ -16,10 +23,14 @@ const rolePermissions: Record<Role, PermissionAction[]> = {
     'asset:edit',
     'asset:delete',
     'asset:assign_lab',
-    'maintenance:assign'
+    'maintenance:assign',
+    'borrow:view',
+    'procurement:approve',
+    'procurement:send_to_vendor'
   ],
-  lab: ['asset:view_lab_only', 'maintenance:raise'],
-  service: ['maintenance:update_status']
+  lab: ['asset:view_lab_only', 'maintenance:raise', 'borrow:create', 'borrow:return', 'borrow:view', 'procurement:create'],
+  service: ['maintenance:update_status'],
+  vendor: ['procurement:vendor_update']
 };
 
 export function canPerform(role: Role, action: PermissionAction): boolean {

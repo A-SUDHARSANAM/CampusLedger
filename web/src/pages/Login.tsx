@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, FlaskConical, GraduationCap, Shield, Wrench } from 'lucide-react';
+import { BriefcaseBusiness, Eye, EyeOff, FlaskConical, GraduationCap, Shield, Wrench } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import type { Role } from '../types/auth';
 import { ROLE_HOME_ROUTE } from '../routes/routeConfig';
@@ -36,6 +36,14 @@ const ROLE_OPTIONS: {
     pillClass: 'service',
     demoEmail: 'service@campus.edu',
     demoPassword: 'service123'
+  },
+  {
+    id: 'vendor',
+    title: 'Vendor',
+    icon: <BriefcaseBusiness size={18} />,
+    pillClass: 'vendor',
+    demoEmail: 'vendor@campus.edu',
+    demoPassword: 'vendor123'
   }
 ];
 
@@ -137,7 +145,7 @@ export function Login() {
               <p className="quick-label">Quick login as:</p>
             )}
 
-            <div className="role-grid">
+            <div className="role-grid role-grid-four">
               {ROLE_OPTIONS.map((role) => (
                 <button
                   key={role.id}
@@ -208,6 +216,7 @@ export function Login() {
               <div>Administrator: admin@campus.edu / admin123</div>
               <div>Lab Incharge: lab@campus.edu / lab123</div>
               <div>Service Staff: service@campus.edu / service123</div>
+              <div>Vendor: vendor@campus.edu / vendor123</div>
             </div>
           ) : null}
         </div>

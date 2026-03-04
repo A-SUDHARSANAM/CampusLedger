@@ -7,14 +7,17 @@ import {
   Wrench,
   FileText,
   ClipboardList,
-  Settings
+  Settings,
+  ShoppingCart,
+  BriefcaseBusiness
 } from 'lucide-react';
 import type { Role } from '../types/auth';
 
 export const ROLE_HOME_ROUTE: Record<Role, string> = {
   admin: '/admin/dashboard',
   lab: '/lab/dashboard',
-  service: '/service/dashboard'
+  service: '/service/dashboard',
+  vendor: '/vendor/dashboard'
 };
 
 export type SidebarItem = {
@@ -28,6 +31,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
   admin: [
     { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard, group: 'main' },
     { label: 'Assets', to: '/admin/assets', icon: Boxes, group: 'main' },
+    { label: 'Procurement', to: '/admin/procurement', icon: ShoppingCart, group: 'main' },
     { label: 'Labs', to: '/admin/labs', icon: Building2, group: 'main' },
     { label: 'Users', to: '/admin/users', icon: Users, group: 'main' },
     { label: 'Maintenance', to: '/admin/maintenance', icon: Wrench, group: 'main' },
@@ -37,6 +41,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
   lab: [
     { label: 'Dashboard', to: '/lab/dashboard', icon: LayoutDashboard, group: 'main' },
     { label: 'My Assets', to: '/lab/assets', icon: Boxes, group: 'main' },
+    { label: 'Procurement', to: '/lab/procurement', icon: ShoppingCart, group: 'main' },
     { label: 'Maintenance Requests', to: '/lab/maintenance', icon: Wrench, group: 'main' },
     { label: 'Settings', to: '/lab/settings', icon: Settings, group: 'system' }
   ],
@@ -44,5 +49,9 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'Dashboard', to: '/service/dashboard', icon: LayoutDashboard, group: 'main' },
     { label: 'Assigned Tasks', to: '/service/tasks', icon: ClipboardList, group: 'main' },
     { label: 'Settings', to: '/service/settings', icon: Settings, group: 'system' }
+  ],
+  vendor: [
+    { label: 'Vendor Orders', to: '/vendor/dashboard', icon: BriefcaseBusiness, group: 'main' },
+    { label: 'Settings', to: '/vendor/settings', icon: Settings, group: 'system' }
   ]
 };

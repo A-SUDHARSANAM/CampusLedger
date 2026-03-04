@@ -4,6 +4,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 import { SIDEBAR_ITEMS } from '../routes/routeConfig';
 import { Bell, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, Moon, Search, Sun } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 function initials(name?: string) {
   if (!name) return 'U';
@@ -15,12 +16,14 @@ function initials(name?: string) {
 function roleBadge(role: string | null) {
   if (role === 'admin') return 'Administrator';
   if (role === 'lab') return 'Lab Incharge';
+  if (role === 'vendor') return 'Vendor';
   return 'Service Staff';
 }
 
 export function DashboardLayout() {
   const { role, user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -34,8 +37,24 @@ export function DashboardLayout() {
   const navItems = useMemo(() => (role ? SIDEBAR_ITEMS[role] : []), [role]);
   const pageTitle = useMemo(() => {
     const match = navItems.find((item) => item.to === location.pathname);
-    return match?.label ?? 'Dashboard';
-  }, [location.pathname, navItems]);
+    return t(
+      {
+        Dashboard: 'dashboard',
+        Assets: 'assets',
+        Procurement: 'procurement',
+        Labs: 'labs',
+        Users: 'users',
+        Maintenance: 'maintenance',
+        Reports: 'reports',
+        'My Assets': 'myAssets',
+        'Maintenance Requests': 'maintenanceRequests',
+        'Assigned Tasks': 'assignedTasks',
+        'Vendor Orders': 'vendorOrders',
+        Settings: 'settings'
+      }[match?.label ?? 'Dashboard'] ?? 'dashboard',
+      match?.label ?? 'Dashboard'
+    );
+  }, [location.pathname, navItems, t]);
 
   return (
     <div className={`app-shell sleek-shell ${isCollapsed ? 'collapsed' : ''}`}>
@@ -73,7 +92,25 @@ export function DashboardLayout() {
                   <span className="nav-icon">
                     <Icon size={16} />
                   </span>
-                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-label">
+                    {t(
+                      {
+                        Dashboard: 'dashboard',
+                        Assets: 'assets',
+                        Procurement: 'procurement',
+                        Labs: 'labs',
+                        Users: 'users',
+                        Maintenance: 'maintenance',
+                        Reports: 'reports',
+                        'My Assets': 'myAssets',
+                        'Maintenance Requests': 'maintenanceRequests',
+                        'Assigned Tasks': 'assignedTasks',
+                        'Vendor Orders': 'vendorOrders',
+                        Settings: 'settings'
+                      }[item.label] ?? item.label,
+                      item.label
+                    )}
+                  </span>
                 </NavLink>
               );
             })}
@@ -91,7 +128,7 @@ export function DashboardLayout() {
                   <span className="nav-icon">
                     <Icon size={16} />
                   </span>
-                  <span className="nav-label">{item.label}</span>
+                  <span className="nav-label">{t('settings', item.label)}</span>
                 </NavLink>
               );
             })}
@@ -99,7 +136,7 @@ export function DashboardLayout() {
 
         <button className="logout-link" type="button" onClick={logout}>
           <LogOut size={16} />
-          <span>Logout</span>
+          <span>{t('logout', 'Logout')}</span>
         </button>
       </aside>
 
@@ -114,6 +151,14 @@ export function DashboardLayout() {
             <label className="topbar-search">
               <Search size={16} />
               <input type="text" placeholder="Search assets..." />
+            </label>
+            <label className="language-switch">
+              <span>{t('langLabel', 'Language')}</span>
+              <select value={language} onChange={(event) => setLanguage(event.target.value as 'en' | 'ta' | 'hi')}>
+                <option value="en">English</option>
+                <option value="ta">Tamil</option>
+                <option value="hi">Hindi</option>
+              </select>
             </label>
 
             <button className="icon-btn" type="button" onClick={toggleTheme} aria-label="Toggle theme">
