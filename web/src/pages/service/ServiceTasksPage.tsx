@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { MaintenanceRequest, MaintenanceStatus } from '../../types/domain';
+import { useLanguage } from '../../context/LanguageContext';
 
 function nextStatus(current: MaintenanceStatus): MaintenanceStatus {
   if (current === 'Pending') return 'In Progress';
@@ -10,6 +11,7 @@ function nextStatus(current: MaintenanceStatus): MaintenanceStatus {
 }
 
 export function ServiceTasksPage() {
+  const { t } = useLanguage();
   const [tasks, setTasks] = useState<MaintenanceRequest[]>([]);
 
   async function load() {
@@ -23,17 +25,17 @@ export function ServiceTasksPage() {
 
   const columns: TableColumn<MaintenanceRequest>[] = useMemo(
     () => [
-      { key: 'requestId', header: 'Request ID' },
-      { key: 'assetName', header: 'Asset' },
-      { key: 'labName', header: 'Lab' },
-      { key: 'status', header: 'Status' },
-      { key: 'priority', header: 'Priority' },
+      { key: 'requestId', header: t('requestId', 'Request ID') },
+      { key: 'assetName', header: t('asset', 'Asset') },
+      { key: 'labName', header: t('labsTitle', 'Lab') },
+      { key: 'status', header: t('status', 'Status') },
+      { key: 'priority', header: t('priority', 'Priority') },
       {
         key: 'id',
-        header: 'Actions',
+        header: t('actions', 'Actions'),
         render: (_, row) =>
           row.status === 'Completed' ? (
-            <span>Closed</span>
+            <span>{t('closed', 'Closed')}</span>
           ) : (
             <button
               className="btn secondary-btn"
@@ -45,21 +47,21 @@ export function ServiceTasksPage() {
                 await load();
               }}
             >
-              Mark {nextStatus(row.status)}
+              {t('mark', 'Mark')} {t(nextStatus(row.status), nextStatus(row.status))}
             </button>
           )
       }
     ],
-    []
+    [t]
   );
 
   return (
     <div className="dashboard-grid">
       <div className="card">
-        <h2>Assigned Tasks</h2>
-        <p>Service staff can update maintenance status and add remarks only.</p>
+        <h2>{t('assignedTasksTitle', 'Assigned Tasks')}</h2>
+        <p>{t('assignedTasksDesc', 'Service staff can update maintenance status and add remarks only.')}</p>
       </div>
-      <DataTable data={tasks} columns={columns} title="Service Tasks" subtitle="Pending and active requests assigned to service staff" />
+      <DataTable data={tasks} columns={columns} title={t('serviceTasksTitle', 'Service Tasks')} subtitle={t('serviceTasksDesc', 'Pending and active requests assigned to service staff')} />
     </div>
   );
 }

@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { ProcurementRequest } from '../../types/domain';
+import { useLanguage } from '../../context/LanguageContext';
 
 export function AdminProcurementPage() {
+  const { t } = useLanguage();
   const [requests, setRequests] = useState<ProcurementRequest[]>([]);
   const [activeType, setActiveType] = useState<'All' | 'Purchase' | 'Service'>('All');
 
@@ -26,15 +28,15 @@ export function AdminProcurementPage() {
 
   const columns: TableColumn<ProcurementRequest>[] = useMemo(
     () => [
-      { key: 'requestNo', header: 'Request No' },
-      { key: 'requestedByLabName', header: 'Requested By' },
-      { key: 'category', header: 'Category' },
-      { key: 'createdDate', header: 'Date' },
-      { key: 'status', header: 'Status' },
-      { key: 'vendorName', header: 'Vendor', render: (value) => String(value ?? '-') },
+      { key: 'requestNo', header: t('requestNo', 'Request No') },
+      { key: 'requestedByLabName', header: t('requestedBy', 'Requested By') },
+      { key: 'category', header: t('category', 'Category') },
+      { key: 'createdDate', header: t('date', 'Date') },
+      { key: 'status', header: t('status', 'Status') },
+      { key: 'vendorName', header: t('vendor', 'Vendor'), render: (value) => String(value ?? '-') },
       {
         key: 'id',
-        header: 'Actions',
+        header: t('actions', 'Actions'),
         render: (_, row) => (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
@@ -46,7 +48,7 @@ export function AdminProcurementPage() {
                 await load();
               }}
             >
-              Approve
+              {t('approve', 'Approve')}
             </button>
             <button
               className="btn primary-btn mini-btn"
@@ -57,45 +59,45 @@ export function AdminProcurementPage() {
                 await load();
               }}
             >
-              Send Vendor
+              {t('sendVendor', 'Send Vendor')}
             </button>
           </div>
         )
       }
     ],
-    []
+    [t]
   );
 
   return (
     <div className="dashboard-grid">
       <section className="card">
-        <h2>Procurement Command Center</h2>
-        <p>Approve lab requests and route to vendor with separate Purchase and Service controls.</p>
+        <h2>{t('procurementCenter', 'Procurement Command Center')}</h2>
+        <p>{t('procurementCenterDesc', 'Approve lab requests and route to vendor with separate Purchase and Service controls.')}</p>
       </section>
       <section className="metric-grid">
         <article className="metric-card">
-          <p className="metric-title">Purchase Requests</p>
+          <p className="metric-title">{t('purchaseRequests', 'Purchase Requests')}</p>
           <p className="metric-value">{purchaseCount}</p>
         </article>
         <article className="metric-card">
-          <p className="metric-title">Service Requests</p>
+          <p className="metric-title">{t('serviceRequests', 'Service Requests')}</p>
           <p className="metric-value">{serviceCount}</p>
         </article>
       </section>
 
       <section className="card procurement-filter-row">
         <button className={`btn secondary-btn mini-btn ${activeType === 'All' ? 'active-tab' : ''}`} type="button" onClick={() => setActiveType('All')}>
-          All
+          {t('all', 'All')}
         </button>
         <button className={`btn secondary-btn mini-btn ${activeType === 'Purchase' ? 'active-tab' : ''}`} type="button" onClick={() => setActiveType('Purchase')}>
-          Purchase
+          {t('purchase', 'Purchase')}
         </button>
         <button className={`btn secondary-btn mini-btn ${activeType === 'Service' ? 'active-tab' : ''}`} type="button" onClick={() => setActiveType('Service')}>
-          Service
+          {t('service', 'Service')}
         </button>
       </section>
 
-      <DataTable data={filtered} columns={columns} title="Lab Requests" subtitle="Admin acceptance and vendor routing workflow" />
+      <DataTable data={filtered} columns={columns} title={t('labRequests', 'Lab Requests')} subtitle={t('adminProcurementSubtitle', 'Admin acceptance and vendor routing workflow')} />
     </div>
   );
 }

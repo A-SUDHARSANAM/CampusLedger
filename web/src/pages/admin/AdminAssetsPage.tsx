@@ -3,6 +3,7 @@ import { Download, Search } from 'lucide-react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { Asset } from '../../types/domain';
+import { useLanguage } from '../../context/LanguageContext';
 
 const LAB_ASSIGNMENTS = [
   { id: 'lab-cs-1', label: 'CS Lab 1' },
@@ -12,6 +13,7 @@ const LAB_ASSIGNMENTS = [
 ];
 
 export function AdminAssetsPage() {
+  const { t } = useLanguage();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -45,15 +47,15 @@ export function AdminAssetsPage() {
 
   const columns: TableColumn<Asset>[] = useMemo(
     () => [
-      { key: 'assetCode', header: 'Asset Code' },
-      { key: 'name', header: 'Asset' },
-      { key: 'category', header: 'Category' },
-      { key: 'location', header: 'Location' },
-      { key: 'status', header: 'Status' },
-      { key: 'warranty', header: 'Warranty' },
+      { key: 'assetCode', header: t('assetCode', 'Asset Code') },
+      { key: 'name', header: t('asset', 'Asset') },
+      { key: 'category', header: t('category', 'Category') },
+      { key: 'location', header: t('location', 'Location') },
+      { key: 'status', header: t('status', 'Status') },
+      { key: 'warranty', header: t('warranty', 'Warranty') },
       {
         key: 'id',
-        header: 'Actions',
+        header: t('actions', 'Actions'),
         render: (_, row) => (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
@@ -64,7 +66,7 @@ export function AdminAssetsPage() {
                 await loadAssets();
               }}
             >
-              Edit
+              {t('edit', 'Edit')}
             </button>
             <button
               className="btn secondary-btn"
@@ -76,7 +78,7 @@ export function AdminAssetsPage() {
                 await loadAssets();
               }}
             >
-              Assign Lab
+              {t('assignLab', 'Assign Lab')}
             </button>
             <button
               className="btn secondary-btn"
@@ -86,17 +88,17 @@ export function AdminAssetsPage() {
                 await loadAssets();
               }}
             >
-              Delete
+              {t('delete', 'Delete')}
             </button>
           </div>
         )
       }
     ],
-    []
+    [t]
   );
 
   function exportCsv() {
-    const header = ['Asset Code', 'Name', 'Category', 'Location', 'Status', 'Warranty'];
+    const header = [t('assetCode', 'Asset Code'), t('name', 'Name'), t('category', 'Category'), t('location', 'Location'), t('status', 'Status'), t('warranty', 'Warranty')];
     const rows = filteredAssets.map((asset) => [asset.assetCode, asset.name, asset.category, asset.location, asset.status, asset.warranty]);
     const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -112,21 +114,21 @@ export function AdminAssetsPage() {
     <div className="dashboard-grid">
       <div className="page-intro page-intro-row">
         <div>
-          <h2>Asset Management</h2>
-          <p>View and manage your lab assets</p>
+          <h2>{t('assetManagement', 'Asset Management')}</h2>
+          <p>{t('viewManageLabAssets', 'View and manage your lab assets')}</p>
         </div>
         <button className="btn secondary-btn page-action-btn" type="button" onClick={exportCsv}>
-          <Download size={15} /> Export CSV
+          <Download size={15} /> {t('exportCsv', 'Export CSV')}
         </button>
       </div>
 
       <section className="card search-toolbar-card">
         <label className="filter-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or code..." />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchByNameCode', 'Search by name or code...')} />
         </label>
         <select className="select slim-select" value={category} onChange={(event) => setCategory(event.target.value)}>
-          <option value="all">All Categories</option>
+          <option value="all">{t('allCategories', 'All Categories')}</option>
           {categories.map((item) => (
             <option key={item} value={item}>
               {item}
@@ -134,25 +136,25 @@ export function AdminAssetsPage() {
           ))}
         </select>
         <select className="select slim-select" value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="all">All Status</option>
-          <option value="Active">Active</option>
-          <option value="Damaged">Damaged</option>
-          <option value="Under Maintenance">Under Maintenance</option>
+          <option value="all">{t('allStatus', 'All Status')}</option>
+          <option value="Active">{t('active', 'Active')}</option>
+          <option value="Damaged">{t('damaged', 'Damaged')}</option>
+          <option value="Under Maintenance">{t('underMaintenance', 'Under Maintenance')}</option>
         </select>
       </section>
 
       {error ? (
         <div className="card">
-          <h2>Error</h2>
+          <h2>{t('error', 'Error')}</h2>
           <p>{error}</p>
         </div>
       ) : (
         <DataTable
           data={filteredAssets}
           columns={columns}
-          title="Asset Register"
-          subtitle="Admin can add, edit, delete, and assign lab ownership"
-          searchPlaceholder="Search assets..."
+          title={t('assetRegister', 'Asset Register')}
+          subtitle={t('adminAssetRegisterSubtitle', 'Admin can add, edit, delete, and assign lab ownership')}
+          searchPlaceholder={t('searchAssets', 'Search assets...')}
         />
       )}
     </div>

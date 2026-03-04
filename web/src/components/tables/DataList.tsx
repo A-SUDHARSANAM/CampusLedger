@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import './table-ui.css';
+import { useLanguage } from '../../context/LanguageContext';
 
 export type ListItem = {
   id: string;
@@ -26,6 +27,7 @@ export function DataList({
   emptyTitle = 'No list items',
   emptyDescription = 'There are no matching entries for this list.'
 }: DataListProps) {
+  const { t } = useLanguage();
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => {
@@ -53,11 +55,11 @@ export function DataList({
       <div className="table-toolbar">
         <div className="table-search-wrap">
           <input
-            aria-label="Search list"
+            aria-label={t('searchList', 'Search list')}
             className="table-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={searchPlaceholder}
+            placeholder={searchPlaceholder === 'Search list...' ? t('searchListEllipsis', 'Search list...') : searchPlaceholder}
           />
         </div>
       </div>
@@ -65,8 +67,8 @@ export function DataList({
       {rows.length === 0 ? (
         <div className="table-empty">
           <div className="table-empty-icon" />
-          <h4>{emptyTitle}</h4>
-          <p>{emptyDescription}</p>
+          <h4>{emptyTitle === 'No list items' ? t('noListItems', emptyTitle) : emptyTitle}</h4>
+          <p>{emptyDescription === 'There are no matching entries for this list.' ? t('noMatchingListEntries', emptyDescription) : emptyDescription}</p>
         </div>
       ) : (
         <div className="list-wrap">
@@ -78,7 +80,7 @@ export function DataList({
               </div>
               <div className="list-meta">
                 {item.meta ? <span>{item.meta}</span> : null}
-                {item.status ? <span className={`status-pill ${item.status}`}>{item.status}</span> : null}
+                {item.status ? <span className={`status-pill ${item.status}`}>{t(item.status, item.status)}</span> : null}
               </div>
             </article>
           ))}

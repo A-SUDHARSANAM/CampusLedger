@@ -4,8 +4,10 @@ import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { BorrowRecord } from '../../types/domain';
 import { downloadSimplePdf } from '../../utils/pdf';
+import { useLanguage } from '../../context/LanguageContext';
 
 export function AdminReportsPage() {
+  const { t } = useLanguage();
   const [records, setRecords] = useState<BorrowRecord[]>([]);
 
   useEffect(() => {
@@ -14,16 +16,16 @@ export function AdminReportsPage() {
 
   const columns: TableColumn<BorrowRecord>[] = useMemo(
     () => [
-      { key: 'borrowId', header: 'Borrow ID' },
-      { key: 'studentName', header: 'Student' },
-      { key: 'projectName', header: 'Project' },
-      { key: 'billNo', header: 'Bill' },
-      { key: 'invoiceNo', header: 'Invoice' },
-      { key: 'status', header: 'Status' },
-      { key: 'fineAmount', header: 'Penalty', render: (value) => `Rs.${value}` },
+      { key: 'borrowId', header: t('borrowId', 'Borrow ID') },
+      { key: 'studentName', header: t('student', 'Student') },
+      { key: 'projectName', header: t('project', 'Project') },
+      { key: 'billNo', header: t('bill', 'Bill') },
+      { key: 'invoiceNo', header: t('invoice', 'Invoice') },
+      { key: 'status', header: t('status', 'Status') },
+      { key: 'fineAmount', header: t('penalty', 'Penalty'), render: (value) => `Rs.${value}` },
       {
         key: 'id',
-        header: 'Download',
+        header: t('download', 'Download'),
         render: (_, row) => (
           <button
             className="btn secondary-btn mini-btn"
@@ -41,21 +43,21 @@ export function AdminReportsPage() {
               ])
             }
           >
-            <Download size={13} /> PDF
+            <Download size={13} /> {t('pdf', 'PDF')}
           </button>
         )
       }
     ],
-    []
+    [t]
   );
 
   return (
     <div className="dashboard-grid">
       <div className="card">
-        <h2>Borrowing & Invoice Reports</h2>
-        <p>Save and download bill, invoice, product, warranty, issue updates, and penalties as PDF.</p>
+        <h2>{t('borrowingReports', 'Borrowing & Invoice Reports')}</h2>
+        <p>{t('borrowingReportsDesc', 'Save and download bill, invoice, product, warranty, issue updates, and penalties as PDF.')}</p>
       </div>
-      <DataTable data={records} columns={columns} title="Borrowing Reports" subtitle="Admin level compliance and audit export" />
+      <DataTable data={records} columns={columns} title={t('borrowingReportsTable', 'Borrowing Reports')} subtitle={t('borrowingReportsTableDesc', 'Admin level compliance and audit export')} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import './table-ui.css';
+import { useLanguage } from '../../context/LanguageContext';
 
 export type TableColumn<T> = {
   key: keyof T;
@@ -36,6 +37,7 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyTitle = 'No records found',
   emptyDescription = 'Try adjusting your search or filter criteria.'
 }: DataTableProps<T>) {
+  const { t } = useLanguage();
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState(filters[0]?.value ?? 'all');
 
@@ -62,11 +64,11 @@ export function DataTable<T extends Record<string, unknown>>({
       <div className="table-toolbar">
         <div className="table-search-wrap">
           <input
-            aria-label="Search records"
+            aria-label={t('searchRecords', 'Search records')}
             className="table-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={searchPlaceholder}
+            placeholder={searchPlaceholder === 'Search records...' ? t('searchRecordsEllipsis', 'Search records...') : searchPlaceholder}
           />
         </div>
 
@@ -92,8 +94,8 @@ export function DataTable<T extends Record<string, unknown>>({
       {filteredRows.length === 0 ? (
         <div className="table-empty">
           <div className="table-empty-icon" />
-          <h4>{emptyTitle}</h4>
-          <p>{emptyDescription}</p>
+          <h4>{emptyTitle === 'No records found' ? t('noRecordsFound', emptyTitle) : emptyTitle}</h4>
+          <p>{emptyDescription === 'Try adjusting your search or filter criteria.' ? t('adjustSearchFilter', emptyDescription) : emptyDescription}</p>
         </div>
       ) : (
         <div className="table-wrap">
@@ -114,7 +116,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     const raw = row[column.key];
                     return (
                       <td className={column.className} key={String(column.key)}>
-                        {column.render ? column.render(raw, row) : String(raw)}
+                        {column.render ? column.render(raw, row) : typeof raw === 'string' ? t(raw, raw) : String(raw)}
                       </td>
                     );
                   })}
