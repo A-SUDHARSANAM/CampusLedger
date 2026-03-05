@@ -13,6 +13,20 @@ export type Asset = {
   labId: string;
   status: AssetStatus;
   warranty: string;
+  // Extended backend fields
+  serialNumber?: string;
+  conditionRating?: number;
+  qrCode?: string;
+  purchaseDate?: string;
+};
+
+export type Notification = {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string;
+  is_read: boolean;
+  created_at: string;
 };
 
 export type LabInfo = {
@@ -29,6 +43,8 @@ export type UserRecord = {
   role: Role;
   email: string;
   assignedLab: string;
+  is_approved?: boolean;
+  status?: 'pending' | 'approved' | 'suspended';
 };
 
 export type MaintenanceHistoryEntry = {
@@ -56,7 +72,18 @@ export type MaintenanceRequest = {
 
 export type BorrowStatus = 'Borrowed' | 'Returned' | 'Late Return' | 'Damaged';
 export type ProcurementCategory = 'Purchase' | 'Service';
-export type ProcurementStatus = 'Pending Admin Approval' | 'Approved by Admin' | 'Sent to Vendor' | 'Accepted by Vendor' | 'Rejected by Vendor';
+export type ProcurementStatus =
+  | 'Pending Admin Approval'
+  | 'Approved by Admin'
+  | 'Sent to Vendor'
+  | 'Accepted by Vendor'
+  | 'Rejected by Vendor'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'ordered'
+  | 'payment_confirmed'
+  | 'delivered';
 
 export type ElectronicsCatalogItem = {
   id: string;

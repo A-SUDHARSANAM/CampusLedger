@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { ProcurementRequest } from '../../types/domain';
@@ -8,6 +8,7 @@ export function AdminProcurementPage() {
   const { t } = useLanguage();
   const [requests, setRequests] = useState<ProcurementRequest[]>([]);
   const [activeType, setActiveType] = useState<'All' | 'Purchase' | 'Service'>('All');
+  const [statusMsg, setStatusMsg] = useState('');
 
   async function load() {
     const rows = await api.getProcurementRequests('admin');
@@ -23,8 +24,40 @@ export function AdminProcurementPage() {
     [activeType, requests]
   );
 
-  const purchaseCount = requests.filter((request) => request.category === 'Purchase').length;
-  const serviceCount = requests.filter((request) => request.category === 'Service').length;
+  const pendingCount = requests.filter((r) => r.status === 'Pending Admin Approval').length;
+  const approvedCount = requests.filter((r) => r.status === 'Approved by Admin').length;
+
+  async function handleApprove(row: ProcurementRequest) {
+    try {
+      await api.approveProcurementRequest('admin', row.id);
+      setStatusMsg(t('approved', 'Request approved.'));
+      await load();
+    } catch { setStatusMsg(t('actionFailed', 'Action failed.')); }
+  }
+
+  async function handleReject(row: ProcurementRequest) {
+    try {
+      await api.rejectProcurementRequest('admin', row.id, 'Rejected by admin');
+      setStatusMsg(t('rejected', 'Request rejected.'));
+      await load();
+    } catch { setStatusMsg(t('actionFailed', 'Action failed.')); }
+  }
+
+  async function handlePlaceOrder(row: ProcurementRequest) {
+    try {
+      await api.sendProcurementToVendor('admin', row.id, 'Campus Vendor Partner');
+      setStatusMsg(t('orderPlaced', 'Order placed.'));
+      await load();
+    } catch { setStatusMsg(t('actionFailed', 'Action failed.')); }
+  }
+
+  async function handleConfirmPayment(row: ProcurementRequest) {
+    try {
+      await api.confirmPayment(row.id);
+      setStatusMsg(t('paymentConfirmed', 'Payment confirmed.'));
+      await load();
+    } catch { setStatusMsg(t('actionFailed', 'Action failed.')); }
+  }
 
   const columns: TableColumn<ProcurementRequest>[] = useMemo(
     () => [
@@ -38,50 +71,49 @@ export function AdminProcurementPage() {
         key: 'id',
         header: t('actions', 'Actions'),
         render: (_, row) => (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              className="btn secondary-btn mini-btn"
-              type="button"
-              disabled={row.status !== 'Pending Admin Approval'}
-              onClick={async () => {
-                await api.approveProcurementRequest('admin', row.requestNo);
-                await load();
-              }}
-            >
-              {t('approve', 'Approve')}
-            </button>
-            <button
-              className="btn primary-btn mini-btn"
-              type="button"
-              disabled={row.status !== 'Approved by Admin'}
-              onClick={async () => {
-                await api.sendProcurementToVendor('admin', row.requestNo, 'Campus Vendor Partner');
-                await load();
-              }}
-            >
-              {t('sendVendor', 'Send Vendor')}
-            </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {row.status === 'Pending Admin Approval' && (
+              <>
+                <button className="btn primary-btn mini-btn" type="button" onClick={() => handleApprove(row)}>
+                  {t('approve', 'Approve')}
+                </button>
+                <button className="btn danger-btn mini-btn" type="button" onClick={() => handleReject(row)}>
+                  {t('reject', 'Reject')}
+                </button>
+              </>
+            )}
+            {row.status === 'Approved by Admin' && (
+              <button className="btn primary-btn mini-btn" type="button" onClick={() => handlePlaceOrder(row)}>
+                {t('placeOrder', 'Place Order')}
+              </button>
+            )}
+            {row.status === 'Sent to Vendor' && (
+              <button className="btn secondary-btn mini-btn" type="button" onClick={() => handleConfirmPayment(row)}>
+                {t('confirmPayment', 'Confirm Payment')}
+              </button>
+            )}
           </div>
         )
       }
     ],
-    [t]
+    [t, requests]
   );
 
   return (
     <div className="dashboard-grid">
       <section className="card">
         <h2>{t('procurementCenter', 'Procurement Command Center')}</h2>
-        <p>{t('procurementCenterDesc', 'Approve lab requests and route to vendor with separate Purchase and Service controls.')}</p>
+        <p>{t('procurementCenterDesc', 'Approve lab requests, place orders, and confirm payments.')}</p>
       </section>
+      {statusMsg && <p style={{ padding: '4px 0', opacity: 0.75, fontSize: '0.875em' }}>{statusMsg}</p>}
       <section className="metric-grid">
         <article className="metric-card">
-          <p className="metric-title">{t('purchaseRequests', 'Purchase Requests')}</p>
-          <p className="metric-value">{purchaseCount}</p>
+          <p className="metric-title">{t('pendingApproval', 'Pending Approval')}</p>
+          <p className="metric-value">{pendingCount}</p>
         </article>
         <article className="metric-card">
-          <p className="metric-title">{t('serviceRequests', 'Service Requests')}</p>
-          <p className="metric-value">{serviceCount}</p>
+          <p className="metric-title">{t('approvedRequests', 'Approved')}</p>
+          <p className="metric-value">{approvedCount}</p>
         </article>
       </section>
 
@@ -97,7 +129,7 @@ export function AdminProcurementPage() {
         </button>
       </section>
 
-      <DataTable data={filtered} columns={columns} title={t('labRequests', 'Lab Requests')} subtitle={t('adminProcurementSubtitle', 'Admin acceptance and vendor routing workflow')} />
+      <DataTable data={filtered} columns={columns} title={t('labRequests', 'Lab Requests')} subtitle={t('adminProcurementSubtitle', 'Admin acceptance, order placement, and payment flow')} />
     </div>
   );
 }

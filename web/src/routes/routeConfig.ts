@@ -9,7 +9,7 @@ import {
   ClipboardList,
   Settings,
   ShoppingCart,
-  BriefcaseBusiness
+  Receipt
 } from 'lucide-react';
 import type { Role } from '../types/auth';
 
@@ -17,7 +17,7 @@ export const ROLE_HOME_ROUTE: Record<Role, string> = {
   admin: '/admin/dashboard',
   lab: '/lab/dashboard',
   service: '/service/dashboard',
-  vendor: '/vendor/dashboard'
+  purchase_dept: '/purchase/dashboard'
 };
 
 export type SidebarItem = {
@@ -50,8 +50,8 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'Assigned Tasks', to: '/service/tasks', icon: ClipboardList, group: 'main' },
     { label: 'Settings', to: '/service/settings', icon: Settings, group: 'system' }
   ],
-  vendor: [
-    { label: 'Vendor Orders', to: '/vendor/dashboard', icon: BriefcaseBusiness, group: 'main' },
-    { label: 'Settings', to: '/vendor/settings', icon: Settings, group: 'system' }
+  purchase_dept: [
+    { label: 'Purchase Orders', to: '/purchase/dashboard', icon: Receipt, group: 'main' },
+    { label: 'Settings', to: '/purchase/settings', icon: Settings, group: 'system' }
   ]
 };

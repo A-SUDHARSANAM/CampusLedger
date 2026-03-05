@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 import { SIDEBAR_ITEMS } from '../routes/routeConfig';
 import { Bell, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, Moon, Search, Sun } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { api } from '../services/api';
+import type { Notification } from '../types/domain';
 
 function initials(name?: string) {
   if (!name) return 'U';
@@ -16,7 +18,7 @@ function initials(name?: string) {
 function roleBadge(role: string | null) {
   if (role === 'admin') return 'Administrator';
   if (role === 'lab') return 'Lab Incharge';
-  if (role === 'vendor') return 'Vendor';
+  if (role === 'purchase_dept') return 'Purchase Dept';
   return 'Service Staff';
 }
 
@@ -29,11 +31,25 @@ export function DashboardLayout() {
   const [isSidebarHover, setIsSidebarHover] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState([
-    'notifWarrantyExpiring',
-    'notifTasksCompleted',
-    'notifNewProcurement'
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    api.getNotifications().then(setNotifications).catch(() => {});
+    api.getUnreadCount().then(setUnreadCount).catch(() => {});
+  }, []);
+
+  async function handleClearNotifications() {
+    await api.markAllNotificationsRead().catch(() => {});
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+  }
+
+  async function handleMarkRead(notifId: string) {
+    await api.markNotificationRead(notifId).catch(() => {});
+    setNotifications((prev) => prev.map((n) => n.id === notifId ? { ...n, is_read: true } : n));
+    setUnreadCount((c) => Math.max(0, c - 1));
+  }
 
   const navItems = useMemo(() => (role ? SIDEBAR_ITEMS[role] : []), [role]);
   const isCollapsed = !isPinned && !isSidebarHover && !isMobileOpen;
@@ -51,7 +67,7 @@ export function DashboardLayout() {
         'My Assets': 'myAssets',
         'Maintenance Requests': 'maintenanceRequests',
         'Assigned Tasks': 'assignedTasks',
-        'Vendor Orders': 'vendorOrders',
+        'Purchase Orders': 'purchaseOrders',
         Settings: 'settings'
       }[label] ?? label,
       label
@@ -165,22 +181,30 @@ export function DashboardLayout() {
             </button>
             <button className="icon-btn bell-btn" type="button" aria-label="Notifications" onClick={() => setNotificationsOpen((open) => !open)}>
               <Bell size={16} />
-              <span className="notif-dot">{notifications.length}</span>
+              {unreadCount > 0 && <span className="notif-dot">{unreadCount}</span>}
             </button>
             {notificationsOpen ? (
               <div className="notif-panel">
                 <div className="notif-panel-head">
                   <strong>{t('notifications', 'Notifications')}</strong>
-                  <button className="btn secondary-btn mini-btn" type="button" onClick={() => setNotifications([])}>
-                    {t('clear', 'Clear')}
+                  <button className="btn secondary-btn mini-btn" type="button" onClick={handleClearNotifications}>
+                    {t('markAllRead', 'Mark all read')}
                   </button>
                 </div>
                 {notifications.length === 0 ? (
                   <p className="notif-empty">{t('noNewNotifications', 'No new notifications.')}</p>
                 ) : (
-                  notifications.map((message, index) => (
-                    <div className="notif-item" key={`${index}-${message}`}>
-                      {t(message, message)}
+                  notifications.map((notif) => (
+                    <div
+                      className={`notif-item${notif.is_read ? ' notif-read' : ''}`}
+                      key={notif.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => !notif.is_read && handleMarkRead(notif.id)}
+                      onKeyDown={(e) => e.key === 'Enter' && !notif.is_read && handleMarkRead(notif.id)}
+                    >
+                      <strong>{notif.title}</strong>
+                      <p style={{ margin: 0, fontSize: '0.8em', opacity: 0.8 }}>{notif.body}</p>
                     </div>
                   ))
                 )}

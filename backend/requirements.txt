@@ -1,0 +1,27 @@
+# FastAPI & ASGI
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+
+# Supabase
+supabase==2.10.0
+
+# Auth & Security
+python-jose[cryptography]==3.3.0
+
+# Settings
+pydantic==2.10.3
+pydantic-settings==2.7.0
+pydantic[email]==2.10.3
+
+# Utilities
+python-multipart==0.0.20
+python-dotenv==1.0.1
+
+# QR Code generation
+qrcode[pil]==8.0
+
+# OCR — invoice scanning
+# Requires Tesseract binary: https://github.com/UB-Mannheim/tesseract/wiki
+pytesseract==0.3.13
+# For OpenAI GPT-4 Vision engine (optional, higher accuracy):
+# pip install openai

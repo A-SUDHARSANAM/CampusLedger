@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
@@ -20,7 +20,7 @@ import { LabMaintenancePage } from './pages/lab/LabMaintenancePage';
 import { LabProcurementPage } from './pages/lab/LabProcurementPage';
 import { ServiceDashboardPage } from './pages/service/ServiceDashboardPage';
 import { ServiceTasksPage } from './pages/service/ServiceTasksPage';
-import { VendorDashboardPage } from './pages/vendor/VendorDashboardPage';
+import { PurchaseDashboardPage } from './pages/purchase/PurchaseDashboardPage';
 import { LanguageProvider } from './context/LanguageContext';
 
 function App() {
@@ -34,14 +34,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Navigate to="/login" replace />} />
 
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <DashboardLayout />
-                </ProtectedRoute>
-              }
-            >
+            <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><DashboardLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<AdminDashboardPage />} />
               <Route path="assets" element={<AdminAssetsPage />} />
               <Route path="procurement" element={<AdminProcurementPage />} />
@@ -52,14 +45,7 @@ function App() {
               <Route path="settings" element={<Settings />} />
             </Route>
 
-            <Route
-              path="/lab"
-              element={
-                <ProtectedRoute allowedRoles={['lab']}>
-                  <DashboardLayout />
-                </ProtectedRoute>
-              }
-            >
+            <Route path="/lab" element={<ProtectedRoute allowedRoles={['lab']}><DashboardLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<LabDashboardPage />} />
               <Route path="assets" element={<LabAssetsPage />} />
               <Route path="procurement" element={<LabProcurementPage />} />
@@ -67,28 +53,14 @@ function App() {
               <Route path="settings" element={<Settings />} />
             </Route>
 
-            <Route
-              path="/service"
-              element={
-                <ProtectedRoute allowedRoles={['service']}>
-                  <DashboardLayout />
-                </ProtectedRoute>
-              }
-            >
+            <Route path="/service" element={<ProtectedRoute allowedRoles={['service']}><DashboardLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<ServiceDashboardPage />} />
               <Route path="tasks" element={<ServiceTasksPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 
-            <Route
-              path="/vendor"
-              element={
-                <ProtectedRoute allowedRoles={['vendor']}>
-                  <DashboardLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route path="dashboard" element={<VendorDashboardPage />} />
+            <Route path="/purchase" element={<ProtectedRoute allowedRoles={['purchase_dept']}><DashboardLayout /></ProtectedRoute>}>
+              <Route path="dashboard" element={<PurchaseDashboardPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Route>

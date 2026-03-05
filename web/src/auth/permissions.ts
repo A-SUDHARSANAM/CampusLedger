@@ -15,7 +15,10 @@ export type PermissionAction =
   | 'procurement:create'
   | 'procurement:approve'
   | 'procurement:send_to_vendor'
-  | 'procurement:vendor_update';
+  | 'procurement:place_order'
+  | 'procurement:confirm_payment'
+  | 'procurement:upload_invoice'
+  | 'procurement:scan_invoice';
 
 const rolePermissions: Record<Role, PermissionAction[]> = {
   admin: [
@@ -30,7 +33,14 @@ const rolePermissions: Record<Role, PermissionAction[]> = {
   ],
   lab: ['asset:view_lab_only', 'maintenance:raise', 'borrow:create', 'borrow:return', 'borrow:view', 'procurement:create'],
   service: ['maintenance:update_status'],
-  vendor: ['procurement:vendor_update']
+  purchase_dept: [
+    'procurement:approve',
+    'procurement:place_order',
+    'procurement:confirm_payment',
+    'procurement:upload_invoice',
+    'procurement:scan_invoice',
+    'borrow:view'
+  ]
 };
 
 export function canPerform(role: Role, action: PermissionAction): boolean {

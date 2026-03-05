@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BriefcaseBusiness, Eye, EyeOff, FlaskConical, GraduationCap, Shield, Wrench } from 'lucide-react';
+import { Eye, EyeOff, FlaskConical, GraduationCap, Receipt, Shield, Wrench } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { api } from '../services/api';
 import type { Role } from '../types/auth';
 import { ROLE_HOME_ROUTE } from '../routes/routeConfig';
 
@@ -38,12 +39,12 @@ const ROLE_OPTIONS: {
     demoPassword: 'service123'
   },
   {
-    id: 'vendor',
-    title: 'Vendor',
-    icon: <BriefcaseBusiness size={18} />,
+    id: 'purchase_dept',
+    title: 'Purchase Dept',
+    icon: <Receipt size={18} />,
     pillClass: 'vendor',
-    demoEmail: 'vendor@campus.edu',
-    demoPassword: 'vendor123'
+    demoEmail: 'purchase@campus.edu',
+    demoPassword: 'purchase123'
   }
 ];
 
@@ -84,6 +85,8 @@ export function Login() {
         if (!email.trim() || !password.trim()) {
           throw new Error('Please complete all fields.');
         }
+        await api.register(email, password, fullName, selectedRole);
+        // After registration, sign in
       }
 
       const user = await login(email, password, selectedRole);

@@ -9,7 +9,7 @@ export function VendorDashboardPage() {
   const [requests, setRequests] = useState<ProcurementRequest[]>([]);
 
   async function load() {
-    const rows = await api.getProcurementRequests('vendor');
+    const rows = await api.getProcurementRequests('purchase_dept');
     setRequests(rows);
   }
 
@@ -33,7 +33,7 @@ export function VendorDashboardPage() {
               type="button"
               disabled={row.status !== 'Sent to Vendor'}
               onClick={async () => {
-                await api.vendorUpdateProcurement('vendor', row.requestNo, 'Accepted by Vendor');
+                await api.vendorUpdateProcurement('purchase_dept', row.requestNo, 'Accepted by Vendor');
                 await load();
               }}
             >
@@ -44,7 +44,7 @@ export function VendorDashboardPage() {
               type="button"
               disabled={row.status !== 'Sent to Vendor'}
               onClick={async () => {
-                await api.vendorUpdateProcurement('vendor', row.requestNo, 'Rejected by Vendor');
+                await api.vendorUpdateProcurement('purchase_dept', row.requestNo, 'Rejected by Vendor');
                 await load();
               }}
             >
