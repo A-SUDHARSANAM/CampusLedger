@@ -185,7 +185,24 @@ def create_asset(
         if cat_id:
             insert_data["category_id"] = cat_id
 
-    result = sb.table("assets").insert(insert_data).execute()
+    try:
+        result = sb.table("assets").insert(insert_data).execute()
+    except Exception as exc:
+        err_msg = str(exc)
+        if "foreign key" in err_msg.lower() or "violates" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid lab_id: the selected lab does not exist in the database.",
+            ) from exc
+        if "unique" in err_msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A duplicate value already exists (serial number or QR code).",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {err_msg[:200]}",
+        ) from exc
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create asset")
 

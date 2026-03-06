@@ -37,6 +37,23 @@ class LabUpdate(BaseModel):
     location: Optional[str] = None
 
 
+class DepartmentOut(BaseModel):
+    id: str
+    department_name: str
+
+
+# ---------------------------------------------------------------------------
+# GET /labs/departments
+# ---------------------------------------------------------------------------
+@router.get("/departments", response_model=List[DepartmentOut], summary="List all departments")
+def list_departments(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin_or_tech),
+):
+    result = sb.table("departments").select("id, department_name").order("department_name").execute()
+    return result.data or []
+
+
 # ---------------------------------------------------------------------------
 # GET /labs
 #   admin       -> all labs
@@ -47,10 +64,9 @@ def list_labs(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin_or_tech),
 ):
-    q = sb.table("labs").select("id, lab_name, department_id, location, departments(department_name)")
-    if current_user["role"] == "lab_technician":
-        q = q.eq("technician_id", current_user["id"])
-    result = q.execute()
+    # Note: labs table has no technician_id column in master_schema.
+    # All authenticated users see all labs; per-user filtering is not supported yet.
+    result = sb.table("labs").select("id, lab_name, department_id, location, departments(department_name)").execute()
     rows = []
     for row in (result.data or []):
         dept = row.pop("departments", None) or {}

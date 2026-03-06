@@ -576,10 +576,13 @@ export const api = {
 
   async createAsset(role: Role, payload: Omit<Asset, 'id'>): Promise<Asset> {
     assertPermission(role, 'asset:create');
+    // Only send lab_id if it is a real UUID (not a mock fallback like 'lab-cs-1')
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const labId = payload.labId && UUID_RE.test(payload.labId) ? payload.labId : undefined;
     const body: Record<string, unknown> = {
       asset_name: payload.name,
       category: payload.category,
-      lab_id: payload.labId || undefined,
+      lab_id: labId,
       serial_number: payload.assetCode || undefined,
       warranty_expiry: payload.warranty || undefined,
       purchase_date: payload.purchaseDate || undefined,
@@ -591,10 +594,11 @@ export const api = {
 
   async updateAsset(role: Role, assetId: string, changes: Partial<Omit<Asset, 'id'>>): Promise<Asset> {
     assertPermission(role, 'asset:edit');
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const body: Record<string, unknown> = {};
     if (changes.name) body.asset_name = changes.name;
     if (changes.status) body.status = changes.status.toLowerCase().replace(' ', '_');
-    if (changes.labId) body.lab_id = changes.labId;
+    if (changes.labId && UUID_RE.test(changes.labId)) body.lab_id = changes.labId;
     if (changes.conditionRating !== undefined) body.condition_rating = changes.conditionRating;
     const data = await backendPut<Record<string, unknown>>(`/assets/${assetId}`, body);
     if (data) return adaptAsset(data);
@@ -623,15 +627,21 @@ export const api = {
   async getLabs(role: Role): Promise<LabInfo[]> {
     if (role !== 'admin') throw new Error('Only admin can access labs.');
     const data = await backendGet<Record<string, unknown>[]>('/labs');
-    if (data) return data.map(adaptLab);
-    return delay([...labs]);
+    // Never fall back to mock data — mock IDs are not valid UUIDs and will
+    // cause database errors if used in asset creation or updates.
+    return data ? data.map(adaptLab) : [];
   },
 
-  async createLab(role: Role, payload: { lab_name: string; department: string; location: string }): Promise<LabInfo> {
+  async getDepartments(): Promise<{ id: string; name: string }[]> {
+    const data = await backendGet<{ id: string; department_name: string }[]>('/labs/departments');
+    return (data ?? []).map((d) => ({ id: d.id, name: d.department_name }));
+  },
+
+  async createLab(role: Role, payload: { lab_name: string; department_id: string; location: string }): Promise<LabInfo> {
     if (role !== 'admin') throw new Error('Permission denied.');
     const data = await backendPost<Record<string, unknown>>('/labs', payload);
     if (data) return adaptLab(data);
-    const created: LabInfo = { id: `lab-${Math.random().toString(36).slice(2, 8)}`, name: payload.lab_name, department: payload.department, assetCount: 0, incharge: '' };
+    const created: LabInfo = { id: `lab-${Math.random().toString(36).slice(2, 8)}`, name: payload.lab_name, department: '', assetCount: 0, incharge: '' };
     labs.push(created);
     return delay(created);
   },

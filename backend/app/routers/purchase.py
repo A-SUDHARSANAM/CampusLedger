@@ -1,6 +1,5 @@
-﻿import uuid
-from typing import List, Optional
-from datetime import date, datetime, timezone
+﻿from typing import List, Optional
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from pydantic import BaseModel
@@ -20,22 +19,11 @@ _require_purchase_dept = require_role("purchase_dept")
 _require_admin_or_pur  = require_role("admin", "purchase_dept")
 _require_any           = require_role("admin", "lab_technician", "service_staff", "purchase_dept")
 
-# Status flow:
-# pending_review -> approved / rejected (admin)
-#                -> ordered             (purchase_dept, after approval)
-#                -> payment_confirmed   (purchase_dept)
-#                -> delivered           (purchase_dept)
-#                -> delayed             (auto-suggested when past expected_delivery_date)
-VALID_STATUSES = {
-    "pending_review", "approved", "rejected",
-    "ordered", "payment_confirmed", "delivered", "delayed",
-}
-
-
-
-def _po_number() -> str:
-    return f"PO-{uuid.uuid4().hex[:8].upper()}"
-
+# Actual DB tables used:
+#   purchase_requests(id, item_name, quantity, requested_by, admin_approval,
+#                     vendor_id, payment_status, order_status, delivery_date, created_at)
+#   purchase_orders  (id, request_id, vendor_id, payment_status, order_status, invoice_url, created_at)
+#   vendors          (id, vendor_name, contact_email, phone, rating, created_at)
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -43,38 +31,35 @@ def _po_number() -> str:
 
 class PurchaseOut(BaseModel):
     id: str
-    po_number: Optional[str] = None
     item_name: str
-    item_description: Optional[str] = None
     quantity: int
-    estimated_cost: Optional[float] = None
-    status: str
-    priority: Optional[str] = None
-    requested_by_id: Optional[str] = None
-    approved_by_id: Optional[str] = None
-    ordered_by_id: Optional[str] = None
+    status: str                           # derived unified status string
     vendor_name: Optional[str] = None
-    expected_delivery_date: Optional[str] = None
-    actual_delivery_date: Optional[str] = None
+    delivery_date: Optional[str] = None
+    admin_approval: Optional[bool] = None
+    order_status: Optional[str] = None
+    payment_status: Optional[str] = None
+    requested_by: Optional[str] = None
+    vendor_id: Optional[str] = None
     invoice_url: Optional[str] = None
-    notes: Optional[str] = None
-    reorder_suggested: Optional[bool] = None
     created_at: Optional[str] = None
+    # Compat aliases kept so adaptProcurement() keeps working
+    estimated_cost: Optional[float] = None
+    notes: Optional[str] = None
+    lab_id: Optional[str] = None
+    lab_name: Optional[str] = None
 
 
 class PurchaseRequestIn(BaseModel):
     item_name: str
-    item_description: Optional[str] = None
     quantity: int = 1
-    estimated_cost: Optional[float] = None
-    priority: str = "medium"
     notes: Optional[str] = None
 
 
 class OrderIn(BaseModel):
-    request_id: str          # the approved purchase_request id
+    request_id: str
     vendor_name: str
-    expected_delivery_date: str   # ISO date string  YYYY-MM-DD
+    expected_delivery_date: str   # ISO date  YYYY-MM-DD
 
 
 class AdminApproveIn(BaseModel):
@@ -83,16 +68,53 @@ class AdminApproveIn(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helper: check and flag delayed orders
+# Helpers
 # ---------------------------------------------------------------------------
+
+def _derive_status(row: dict) -> str:
+    """Map (admin_approval, order_status, payment_status) → unified status string."""
+    if row.get("order_status") == "cancelled":
+        return "rejected"
+    if row.get("order_status") == "delivered":
+        return "delivered"
+    if row.get("payment_status") in ("paid",):
+        return "payment_confirmed"
+    if row.get("order_status") == "ordered":
+        return "ordered"
+    if row.get("admin_approval") is True:
+        return "approved"
+    return "pending_review"
+
+
+def _enrich(row: dict, *, vendor_name: Optional[str] = None) -> dict:
+    """Add derived status + vendor_name to a purchase_requests row."""
+    row["status"] = _derive_status(row)
+    if vendor_name is not None:
+        row["vendor_name"] = vendor_name
+    elif "vendors" in row:
+        # Supabase embed: {"vendors": {"vendor_name": "..."}}
+        v = row.pop("vendors", None) or {}
+        row["vendor_name"] = v.get("vendor_name")
+    return row
+
+
+def _get_or_create_vendor(sb: Client, vendor_name: str) -> str:
+    """Return vendor UUID, creating a new vendor record if needed."""
+    res = sb.table("vendors").select("id").ilike("vendor_name", vendor_name).limit(1).execute()
+    if res.data:
+        return res.data[0]["id"]
+    new = sb.table("vendors").insert({"vendor_name": vendor_name}).execute()
+    return new.data[0]["id"]
+
+
 def _check_delay(record: dict) -> dict:
-    """Set reorder_suggested=True if order is past expected_delivery_date."""
-    expected = record.get("expected_delivery_date")
+    """Set reorder_suggested=True if delivery is overdue."""
+    delivery = record.get("delivery_date")
     rec_status = record.get("status")
     if (
-        expected
+        delivery
         and rec_status in ("ordered", "payment_confirmed")
-        and date.fromisoformat(expected[:10]) < date.today()
+        and date.fromisoformat(str(delivery)[:10]) < date.today()
     ):
         record["reorder_suggested"] = True
     return record
@@ -113,15 +135,15 @@ def raise_request(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_lab_tech),
 ):
-    data = payload.model_dump(exclude_none=True)
-    data["requested_by_id"] = current_user["id"]
-    data["status"]          = "pending_review"
-    data["po_number"]       = _po_number()
-
-    result = sb.table("purchase_orders").insert(data).execute()
+    data = {
+        "item_name":    payload.item_name,
+        "quantity":     payload.quantity,
+        "requested_by": current_user["id"],
+    }
+    result = sb.table("purchase_requests").insert(data).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create purchase request")
-    return result.data[0]
+    return _enrich(result.data[0])
 
 
 # ---------------------------------------------------------------------------
@@ -139,42 +161,40 @@ def admin_approve(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin),
 ):
-    existing = sb.table("purchase_orders").select("id, status, requested_by_id").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("purchase_requests").select("id, admin_approval, order_status").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase request not found")
-    if existing.data["status"] != "pending_review":
+    cur = existing.data
+    # Prevent re-review if already processed
+    if cur.get("admin_approval") is True or cur.get("order_status") == "cancelled":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Request is already '{existing.data['status']}', cannot re-review",
+            detail="Request has already been reviewed",
         )
 
-    update = {
-        "status":         "approved" if payload.approved else "rejected",
-        "approved_by_id": current_user["id"],
-    }
-    if payload.notes:
-        update["notes"] = payload.notes
+    if payload.approved:
+        update = {"admin_approval": True}
+    else:
+        update = {"order_status": "cancelled"}
 
-    result = sb.table("purchase_orders").update(update).eq("id", request_id).execute()
+    result = sb.table("purchase_requests").update(update).eq("id", request_id).execute()
     row = result.data[0]
     try:
         notify_purchase_decision(
             sb,
-            order_id         = request_id,
-            requested_by_id  = existing.data.get("requested_by_id"),
-            approved         = payload.approved,
-            notes            = payload.notes,
+            order_id        = request_id,
+            requested_by_id = cur.get("requested_by"),
+            approved        = payload.approved,
+            notes           = payload.notes,
         )
     except Exception:
         pass
-    return row
+    return _enrich(row)
 
 
 # ---------------------------------------------------------------------------
 # POST /purchase/order
-#   Purchase department formalises an approved request into a purchase order
-#   and records vendor + expected delivery date.
-#   The order is placed only after payment is confirmed via a follow-up action.
+#   Admin/purchase dept formalises an approved request: assigns vendor + marks ordered
 # ---------------------------------------------------------------------------
 @router.post(
     "/order",
@@ -187,28 +207,29 @@ def create_order(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin_or_pur),
 ):
-    existing = sb.table("purchase_orders").select("id, status").eq("id", payload.request_id).maybe_single().execute()
+    existing = sb.table("purchase_requests").select("id, admin_approval, order_status").eq("id", payload.request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase request not found")
-    if existing.data["status"] != "approved":
+    if not existing.data.get("admin_approval"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only admin-approved requests can be converted to an order",
         )
 
+    vendor_id = _get_or_create_vendor(sb, payload.vendor_name)
     update = {
-        "status":                 "ordered",
-        "ordered_by_id":          current_user["id"],
-        "vendor_name":            payload.vendor_name,
-        "expected_delivery_date": payload.expected_delivery_date,
+        "vendor_id":    vendor_id,
+        "order_status": "ordered",
+        "delivery_date": payload.expected_delivery_date,
     }
-    result = sb.table("purchase_orders").update(update).eq("id", payload.request_id).execute()
-    return result.data[0]
+    result = sb.table("purchase_requests").update(update).eq("id", payload.request_id).execute()
+    row = result.data[0]
+    return _enrich(row, vendor_name=payload.vendor_name)
 
 
 # ---------------------------------------------------------------------------
 # POST /purchase/{id}/confirm-payment
-#   Purchase dept records payment confirmation; order is now active
+#   Purchase dept records payment confirmation
 # ---------------------------------------------------------------------------
 @router.post(
     "/{order_id}/confirm-payment",
@@ -220,16 +241,16 @@ def confirm_payment(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin_or_pur),
 ):
-    existing = sb.table("purchase_orders").select("id, status").eq("id", order_id).maybe_single().execute()
+    existing = sb.table("purchase_requests").select("id, order_status").eq("id", order_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    if existing.data["status"] != "ordered":
+    if existing.data.get("order_status") != "ordered":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Payment can only be confirmed for orders in 'ordered' status",
         )
-    result = sb.table("purchase_orders").update({"status": "payment_confirmed"}).eq("id", order_id).execute()
-    return result.data[0]
+    result = sb.table("purchase_requests").update({"payment_status": "paid"}).eq("id", order_id).execute()
+    return _enrich(result.data[0])
 
 
 # ---------------------------------------------------------------------------
@@ -250,48 +271,51 @@ def upload_invoice(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin_or_pur),
 ):
-    existing = sb.table("purchase_orders").select("id, status").eq("id", order_id).maybe_single().execute()
+    existing = sb.table("purchase_requests").select("id, order_status").eq("id", order_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    if existing.data["status"] not in ("payment_confirmed", "ordered"):
+    if existing.data.get("order_status") not in ("ordered",):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Invoice can only be uploaded for orders that have been ordered or payment confirmed",
+            detail="Invoice can only be uploaded for orders in 'ordered' status",
         )
 
     public_url = upload_file(sb, Bucket.PURCHASE_INVOICES, order_id, invoice)
 
-    update: dict = {
-        "invoice_url": public_url,
-        "status":      "delivered",
-    }
+    update: dict = {"order_status": "delivered"}
     if actual_delivery_date:
-        update["actual_delivery_date"] = actual_delivery_date
+        update["delivery_date"] = actual_delivery_date
 
-    result = sb.table("purchase_orders").update(update).eq("id", order_id).execute()
+    result = sb.table("purchase_requests").update(update).eq("id", order_id).execute()
 
-    # Notify admin that invoice is ready for review
+    # Upsert into purchase_orders for invoice_url storage
+    try:
+        po_existing = sb.table("purchase_orders").select("id").eq("request_id", order_id).limit(1).execute()
+        if po_existing.data:
+            sb.table("purchase_orders").update({"invoice_url": public_url, "order_status": "delivered"}).eq("request_id", order_id).execute()
+        else:
+            sb.table("purchase_orders").insert({"request_id": order_id, "invoice_url": public_url, "order_status": "delivered"}).execute()
+    except Exception:
+        pass
+
+    # Notify admin
     try:
         role_res = sb.table("roles").select("id").eq("role_name", "admin").limit(1).execute()
         admin_rows = []
         if role_res.data:
             admin_rows = sb.table("users").select("id").eq("role_id", role_res.data[0]["id"]).execute().data or []
         notifications = [
-            {
-                "user_id": adm["id"],
-                "title":   "Invoice Upload",
-                "message": f"Invoice uploaded for order {order_id}. Please review.",
-                "type":    "invoice",
-                "is_read": False,
-            }
+            {"user_id": adm["id"], "title": "Invoice Upload",
+             "message": f"Invoice uploaded for order {order_id}. Please review.",
+             "type": "invoice", "is_read": False}
             for adm in admin_rows
         ]
         if notifications:
             sb.table("notifications").insert(notifications).execute()
     except Exception:
-        pass  # non-fatal; order update already succeeded
+        pass
 
-    return result.data[0]
+    return _enrich(result.data[0])
 
 
 # ---------------------------------------------------------------------------
@@ -312,27 +336,28 @@ def list_orders(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_any),
 ):
-    if req_status and req_status not in VALID_STATUSES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"status must be one of: {', '.join(sorted(VALID_STATUSES))}",
-        )
-
-    q = sb.table("purchase_orders").select("*").range(skip, skip + limit - 1).order("created_at", desc=True)
+    # Fetch from purchase_requests with vendor name via join
+    q = sb.table("purchase_requests").select("*, vendors(vendor_name)").range(skip, skip + limit - 1).order("created_at", desc=True)
 
     if current_user["role"] not in ("admin", "purchase_dept"):
-        q = q.eq("requested_by_id", current_user["id"])
-    if req_status:
-        q = q.eq("status", req_status)
+        q = q.eq("requested_by", current_user["id"])
 
     rows = q.execute().data or []
 
-    # Annotate + optionally filter for delayed orders
-    rows = [_check_delay(r) for r in rows]
-    if reorder_only:
-        rows = [r for r in rows if r.get("reorder_suggested")]
+    results = []
+    for r in rows:
+        r = _enrich(r)
+        r = _check_delay(r)
+        results.append(r)
 
-    return rows
+    # Filter by derived status if requested
+    if req_status:
+        results = [r for r in results if r.get("status") == req_status]
+
+    if reorder_only:
+        results = [r for r in results if r.get("reorder_suggested")]
+
+    return results
 
 
 # ---------------------------------------------------------------------------
