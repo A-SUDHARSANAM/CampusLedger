@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Box, CheckCircle2, RefreshCw, ShoppingCart, Users } from 'lucide-react';
+import { AlertTriangle, Box, CheckCircle2, RefreshCw, ShoppingCart, Users, Wrench } from 'lucide-react';
 import { api } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -13,6 +13,51 @@ type AdminKpis = {
 };
 
 type ChartDatum = { label: string; value: number };
+
+const CHART_COLORS = ['#2563eb', '#22c55e', '#f59e0b', '#e11d48', '#a78bfa', '#06b6d4', '#f97316', '#84cc16'];
+
+function DonutChart({ data, animate }: { data: ChartDatum[]; animate: boolean }) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0 || data.length === 0) {
+    return (
+      <div className="donut-wrap">
+        <div className={`donut-chart ${animate ? 'animate' : ''}`}><span>—</span></div>
+        <div className="legend-list"><p style={{ opacity: 0.5, fontSize: 12 }}>No data yet</p></div>
+      </div>
+    );
+  }
+
+  let accumulated = 0;
+  const segments = data.map((d, i) => {
+    const pct = (d.value / total) * 100;
+    const start = accumulated;
+    accumulated += pct;
+    return { ...d, start, end: accumulated, color: CHART_COLORS[i % CHART_COLORS.length], pct };
+  });
+
+  const conicGradient = segments.map((s) => `${s.color} ${s.start.toFixed(2)}% ${s.end.toFixed(2)}%`).join(', ');
+  const largest = segments.reduce((a, b) => (b.pct > a.pct ? b : a));
+
+  return (
+    <div className="donut-wrap">
+      <div
+        className={`donut-chart ${animate ? 'animate' : ''}`}
+        style={{ background: `conic-gradient(${conicGradient})` }}
+      >
+        <span>{Math.round(largest.pct)}%</span>
+      </div>
+      <div className="legend-list">
+        {segments.map((s) => (
+          <div key={s.label}>
+            <span className="legend-dot" style={{ background: s.color }} />
+            <span>{s.label}</span>
+            <span style={{ marginLeft: 'auto' }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function AdminDashboardPage() {
   const { t } = useLanguage();
@@ -86,40 +131,40 @@ export function AdminDashboardPage() {
       </div>
 
       <div className="metric-grid metric-grid-five">
-        <article className={`metric-card touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '70ms' } as React.CSSProperties}>
+        <article className={`metric-card blue touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '70ms' } as React.CSSProperties}>
           <div className="metric-top">
             <p className="metric-title">{t('totalAssets', 'Total Assets')}</p>
             <span className="metric-icon"><Box size={16} /></span>
           </div>
-          <p className="metric-value">{kpis?.totalAssets ?? 0}</p>
+          <p className="metric-value">{kpis?.totalAssets ?? '—'}</p>
         </article>
-        <article className={`metric-card touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '120ms' } as React.CSSProperties}>
+        <article className={`metric-card green touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '120ms' } as React.CSSProperties}>
           <div className="metric-top">
             <p className="metric-title">{t('activeAssets', 'Active Assets')}</p>
             <span className="metric-icon"><CheckCircle2 size={16} /></span>
           </div>
-          <p className="metric-value">{kpis?.activeAssets ?? 0}</p>
+          <p className="metric-value">{kpis?.activeAssets ?? '—'}</p>
         </article>
-        <article className={`metric-card touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '170ms' } as React.CSSProperties}>
+        <article className={`metric-card amber touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '170ms' } as React.CSSProperties}>
           <div className="metric-top">
             <p className="metric-title">{t('damagedAssets', 'Damaged Assets')}</p>
             <span className="metric-icon"><AlertTriangle size={16} /></span>
           </div>
-          <p className="metric-value">{kpis?.damagedAssets ?? 0}</p>
+          <p className="metric-value">{kpis?.damagedAssets ?? '—'}</p>
         </article>
-        <article className={`metric-card touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '220ms' } as React.CSSProperties}>
+        <article className={`metric-card violet touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '220ms' } as React.CSSProperties}>
           <div className="metric-top">
             <p className="metric-title">{t('pendingRequests', 'Pending Requests')}</p>
             <span className="metric-icon"><ShoppingCart size={16} /></span>
           </div>
-          <p className="metric-value">{kpis?.pendingRequests ?? 0}</p>
+          <p className="metric-value">{kpis?.pendingRequests ?? '—'}</p>
         </article>
         <article className={`metric-card touch-card entry-animate ${animateCharts ? 'in' : ''}`} style={{ '--delay': '270ms' } as React.CSSProperties}>
           <div className="metric-top">
             <p className="metric-title">{t('totalLabs', 'Total Labs')}</p>
             <span className="metric-icon"><Users size={16} /></span>
           </div>
-          <p className="metric-value">{kpis?.labs ?? 0}</p>
+          <p className="metric-value">{kpis?.labs ?? '—'}</p>
         </article>
       </div>
 
@@ -150,19 +195,7 @@ export function AdminDashboardPage() {
           <div className="chart-head">
             <h3>{t('categoryDistribution', 'Asset Category Distribution')}</h3>
           </div>
-          <div className="donut-wrap">
-            <div className={`donut-chart ${animateCharts ? 'animate' : ''}`}>
-              <span>100%</span>
-            </div>
-            <div className="legend-list">
-              {categories.map((item) => (
-                <div key={item.label}>
-                  <span>{t(item.label, item.label)}</span>
-                  <span style={{ marginLeft: 'auto' }}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <DonutChart data={categories} animate={animateCharts} />
         </section>
       </div>
 

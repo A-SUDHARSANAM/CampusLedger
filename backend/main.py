@@ -25,8 +25,8 @@ async def lifespan(app: FastAPI):
     from app.db.supabase import supabase_admin
 
     try:
-        # Lightweight connectivity check — list up to 1 row from profiles
-        supabase_admin.table("profiles").select("id").limit(1).execute()
+        # Lightweight connectivity check — list up to 1 row from users
+        supabase_admin.table("users").select("id").limit(1).execute()
     except Exception as exc:  # pragma: no cover
         import logging
         logging.getLogger("campusledger").warning("Supabase connectivity check failed: %s", exc)

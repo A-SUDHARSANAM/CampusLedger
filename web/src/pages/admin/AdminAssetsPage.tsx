@@ -1,24 +1,47 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Search } from 'lucide-react';
+import { Download, Plus, Search, X } from 'lucide-react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { Asset } from '../../types/domain';
+import type { LabInfo } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
 
-const LAB_ASSIGNMENTS = [
-  { id: 'lab-cs-1', label: 'CS Lab 1' },
-  { id: 'lab-mech', label: 'Mech Lab' },
-  { id: 'lab-ece', label: 'ECE Lab' },
-  { id: 'lab-chem', label: 'Chemistry Lab' }
-];
+const ASSET_STATUSES = ['Active', 'Under Maintenance', 'Damaged'] as const;
+
+function formatCategoryName(name: string) {
+  return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const EMPTY_FORM = {
+  name: '',
+  assetCode: '',
+  category: '',
+  labId: '',
+  status: 'Active' as Asset['status'],
+  warranty: '',
+  purchaseDate: ''
+};
+
+function StatusBadge({ status }: { status: Asset['status'] }) {
+  const cls = status === 'Active' ? 'asset-badge active' : status === 'Damaged' ? 'asset-badge damaged' : 'asset-badge maintenance';
+  return <span className={cls}>{status}</span>;
+}
 
 export function AdminAssetsPage() {
   const { t } = useLanguage();
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [labList, setLabList] = useState<LabInfo[]>([]);
+  const [categoryList, setCategoryList] = useState<{ id: string; category_name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [status, setStatus] = useState('all');
+
+  // Add-asset modal
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function loadAssets() {
     const rows = await api.getAssets('admin');
@@ -27,7 +50,51 @@ export function AdminAssetsPage() {
 
   useEffect(() => {
     loadAssets().catch((err: Error) => setError(err.message));
+    api.getLabs('admin').then(setLabList).catch(() => {});
+    api.getAssetCategories().then(setCategoryList).catch(() => {});
   }, []);
+
+  function openAddModal() {
+    setForm({ ...EMPTY_FORM });
+    setFormError(null);
+    setShowModal(true);
+  }
+
+  function closeModal() {
+    setShowModal(false);
+    setFormError(null);
+  }
+
+  function setField(key: keyof typeof EMPTY_FORM, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleAddAsset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setFormError('Asset name is required.'); return; }
+    if (!form.category.trim()) { setFormError('Category is required.'); return; }
+    setFormError(null);
+    setSaving(true);
+    try {
+      const lab = labList.find((l) => l.id === form.labId);
+      await api.createAsset('admin', {
+        assetCode: form.assetCode.trim() || '',
+        name: form.name.trim(),
+        category: form.category.trim(),
+        location: lab?.name ?? '',
+        labId: form.labId || '',
+        status: form.status,
+        warranty: form.warranty,
+        purchaseDate: form.purchaseDate || undefined
+      });
+      await loadAssets();
+      closeModal();
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save asset.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const filteredAssets = useMemo(
     () =>
@@ -35,7 +102,7 @@ export function AdminAssetsPage() {
         const passQuery =
           !query ||
           asset.name.toLowerCase().includes(query.toLowerCase()) ||
-          asset.assetCode.toLowerCase().includes(query.toLowerCase());
+          (asset.assetCode && asset.assetCode.toLowerCase().includes(query.toLowerCase()));
         const passCategory = category === 'all' || asset.category === category;
         const passStatus = status === 'all' || asset.status === status;
         return passQuery && passCategory && passStatus;
@@ -43,37 +110,40 @@ export function AdminAssetsPage() {
     [assets, category, query, status]
   );
 
-  const categories = useMemo(() => Array.from(new Set(assets.map((item) => item.category))), [assets]);
-
   const columns: TableColumn<Asset>[] = useMemo(
     () => [
-      { key: 'assetCode', header: t('assetCode', 'Asset Code') },
-      { key: 'name', header: t('asset', 'Asset') },
+      { key: 'assetCode', header: t('assetCode', 'Serial / Code'), render: (v) => <span style={{ fontFamily: 'monospace', fontSize: 12, opacity: v ? 1 : 0.4 }}>{String(v || '—')}</span> },
+      { key: 'name', header: t('asset', 'Asset Name') },
       { key: 'category', header: t('category', 'Category') },
-      { key: 'location', header: t('location', 'Location') },
-      { key: 'status', header: t('status', 'Status') },
-      { key: 'warranty', header: t('warranty', 'Warranty') },
+      { key: 'location', header: t('location', 'Location'), render: (v) => <span style={{ opacity: v ? 1 : 0.4 }}>{String(v || '—')}</span> },
+      { key: 'status', header: t('status', 'Status'), render: (v) => <StatusBadge status={v as Asset['status']} /> },
+      { key: 'warranty', header: t('warranty', 'Warranty'), render: (v) => <span style={{ fontSize: 12, opacity: v ? 1 : 0.4 }}>{String(v || '—')}</span> },
       {
         key: 'id',
         header: t('actions', 'Actions'),
         render: (_, row) => (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               className="btn secondary-btn"
+              style={{ fontSize: 12, padding: '4px 10px' }}
               type="button"
               onClick={async () => {
-                await api.updateAsset('admin', row.id, { status: row.status === 'Damaged' ? 'Active' : 'Damaged' });
+                const nextStatus = row.status === 'Active' ? 'Damaged' : row.status === 'Damaged' ? 'Under Maintenance' : 'Active';
+                await api.updateAsset('admin', row.id, { status: nextStatus });
                 await loadAssets();
               }}
             >
-              {t('edit', 'Edit')}
+              {t('toggleStatus', 'Status')}
             </button>
             <button
               className="btn secondary-btn"
+              style={{ fontSize: 12, padding: '4px 10px' }}
               type="button"
               onClick={async () => {
-                const current = LAB_ASSIGNMENTS.findIndex((lab) => lab.label === row.location);
-                const next = LAB_ASSIGNMENTS[(current + 1) % LAB_ASSIGNMENTS.length];
+                const labs = labList.length > 0 ? labList : [];
+                if (labs.length === 0) return;
+                const current = labs.findIndex((lab) => lab.name === row.location);
+                const next = labs[(current + 1) % labs.length];
                 await api.assignAssetToLab('admin', row.id, next.id);
                 await loadAssets();
               }}
@@ -81,9 +151,11 @@ export function AdminAssetsPage() {
               {t('assignLab', 'Assign Lab')}
             </button>
             <button
-              className="btn secondary-btn"
+              className="btn danger-btn"
+              style={{ fontSize: 12, padding: '4px 10px' }}
               type="button"
               onClick={async () => {
+                if (!window.confirm(`Delete "${row.name}"?`)) return;
                 await api.deleteAsset('admin', row.id);
                 await loadAssets();
               }}
@@ -94,13 +166,13 @@ export function AdminAssetsPage() {
         )
       }
     ],
-    [t]
+    [t, labList]
   );
 
   function exportCsv() {
-    const header = [t('assetCode', 'Asset Code'), t('name', 'Name'), t('category', 'Category'), t('location', 'Location'), t('status', 'Status'), t('warranty', 'Warranty')];
-    const rows = filteredAssets.map((asset) => [asset.assetCode, asset.name, asset.category, asset.location, asset.status, asset.warranty]);
-    const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
+    const header = ['Serial/Code', 'Asset Name', 'Category', 'Location', 'Status', 'Warranty'];
+    const rows = filteredAssets.map((a) => [a.assetCode, a.name, a.category, a.location, a.status, a.warranty]);
+    const csv = [header.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -110,52 +182,147 @@ export function AdminAssetsPage() {
     URL.revokeObjectURL(url);
   }
 
+  // KPI counts from current filtered list (or all assets)
+  const kpiTotal = assets.length;
+  const kpiActive = assets.filter((a) => a.status === 'Active').length;
+  const kpiDamaged = assets.filter((a) => a.status === 'Damaged').length;
+  const kpiMaint = assets.filter((a) => a.status === 'Under Maintenance').length;
+
   return (
     <div className="dashboard-grid">
       <div className="page-intro page-intro-row">
         <div>
           <h2>{t('assetManagement', 'Asset Management')}</h2>
-          <p>{t('viewManageLabAssets', 'View and manage your lab assets')}</p>
+          <p>{t('viewManageLabAssets', 'View and manage all campus assets')}</p>
         </div>
-        <button className="btn secondary-btn page-action-btn" type="button" onClick={exportCsv}>
-          <Download size={15} /> {t('exportCsv', 'Export CSV')}
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn primary-btn page-action-btn" type="button" onClick={openAddModal}>
+            <Plus size={15} /> {t('addAsset', 'Add Asset')}
+          </button>
+          <button className="btn secondary-btn page-action-btn" type="button" onClick={exportCsv}>
+            <Download size={15} /> {t('exportCsv', 'Export CSV')}
+          </button>
+        </div>
+      </div>
+
+      {/* Live mini-KPIs */}
+      <div className="asset-kpi-row">
+        <div className="asset-kpi-card">
+          <span className="asset-kpi-num">{kpiTotal}</span>
+          <span className="asset-kpi-label">Total</span>
+        </div>
+        <div className="asset-kpi-card active">
+          <span className="asset-kpi-num">{kpiActive}</span>
+          <span className="asset-kpi-label">Active</span>
+        </div>
+        <div className="asset-kpi-card damaged">
+          <span className="asset-kpi-num">{kpiDamaged}</span>
+          <span className="asset-kpi-label">Damaged</span>
+        </div>
+        <div className="asset-kpi-card maintenance">
+          <span className="asset-kpi-num">{kpiMaint}</span>
+          <span className="asset-kpi-label">Under Maintenance</span>
+        </div>
       </div>
 
       <section className="card search-toolbar-card">
         <label className="filter-search">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchByNameCode', 'Search by name or code...')} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('searchByNameCode', 'Search by name or serial...')} />
         </label>
-        <select className="select slim-select" value={category} onChange={(event) => setCategory(event.target.value)}>
+        <select className="select slim-select" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="all">{t('allCategories', 'All Categories')}</option>
-          {categories.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
+          {categoryList.map((c) => <option key={c.id} value={c.category_name}>{formatCategoryName(c.category_name)}</option>)}
         </select>
-        <select className="select slim-select" value={status} onChange={(event) => setStatus(event.target.value)}>
+        <select className="select slim-select" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="all">{t('allStatus', 'All Status')}</option>
-          <option value="Active">{t('active', 'Active')}</option>
-          <option value="Damaged">{t('damaged', 'Damaged')}</option>
-          <option value="Under Maintenance">{t('underMaintenance', 'Under Maintenance')}</option>
+          <option value="Active">Active</option>
+          <option value="Damaged">Damaged</option>
+          <option value="Under Maintenance">Under Maintenance</option>
         </select>
       </section>
 
       {error ? (
-        <div className="card">
-          <h2>{t('error', 'Error')}</h2>
-          <p>{error}</p>
-        </div>
+        <div className="card"><h2>Error</h2><p>{error}</p></div>
       ) : (
         <DataTable
           data={filteredAssets}
           columns={columns}
           title={t('assetRegister', 'Asset Register')}
-          subtitle={t('adminAssetRegisterSubtitle', 'Admin can add, edit, delete, and assign lab ownership')}
+          subtitle={`${filteredAssets.length} of ${kpiTotal} assets`}
           searchPlaceholder={t('searchAssets', 'Search assets...')}
         />
+      )}
+
+      {/* ── Add Asset Modal ──────────────────────────────────────────── */}
+      {showModal && (
+        <div className="modal-backdrop" onClick={closeModal}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <h3>{t('addAsset', 'Add New Asset')}</h3>
+              <button type="button" onClick={closeModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p className="modal-sub">Asset ID is automatically assigned by the database.</p>
+
+            <form onSubmit={handleAddAsset}>
+              <div className="form-grid">
+                <div className="form-field full-col">
+                  <label>Asset Name<span className="required-star">*</span></label>
+                  <input className="input" placeholder="e.g. Dell OptiPlex 7090" value={form.name} onChange={(e) => setField('name', e.target.value)} required />
+                </div>
+
+                <div className="form-field">
+                  <label>Category<span className="required-star">*</span></label>
+                  <select className="select" value={form.category} onChange={(e) => setField('category', e.target.value)} required>
+                    <option value="">— Select Category —</option>
+                    {categoryList.map((c) => (
+                      <option key={c.id} value={c.category_name}>{formatCategoryName(c.category_name)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <label>Status<span className="required-star">*</span></label>
+                  <select className="select" value={form.status} onChange={(e) => setField('status', e.target.value)}>
+                    {ASSET_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <label>Location / Lab</label>
+                  <select className="select" value={form.labId} onChange={(e) => setField('labId', e.target.value)}>
+                    <option value="">— Select Lab —</option>
+                    {labList.map((lab) => <option key={lab.id} value={lab.id}>{lab.name} {lab.department ? `(${lab.department})` : ''}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <label>Asset Code / Serial No</label>
+                  <input className="input" placeholder="e.g. LAB-PC-001" value={form.assetCode} onChange={(e) => setField('assetCode', e.target.value)} />
+                </div>
+
+                <div className="form-field">
+                  <label>Warranty Expiry</label>
+                  <input className="input" type="date" value={form.warranty} onChange={(e) => setField('warranty', e.target.value)} />
+                </div>
+
+                <div className="form-field">
+                  <label>Purchase Date</label>
+                  <input className="input" type="date" value={form.purchaseDate} onChange={(e) => setField('purchaseDate', e.target.value)} />
+                </div>
+              </div>
+
+              {formError && <p style={{ marginTop: 14, color: 'var(--danger)', fontSize: 13 }}>{formError}</p>}
+
+              <div className="modal-actions">
+                <button type="button" className="btn secondary-btn" onClick={closeModal} disabled={saving}>Cancel</button>
+                <button type="submit" className="btn primary-btn" disabled={saving}>{saving ? 'Saving…' : 'Add Asset'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

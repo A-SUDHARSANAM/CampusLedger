@@ -52,6 +52,14 @@ async function backendPost<T>(path: string, body: unknown): Promise<T | null> {
   return null;
 }
 
+/** Like backendPost but throws a user-readable error on non-2xx responses. */
+async function backendPostOrThrow<T>(path: string, body: unknown): Promise<T> {
+  const res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return data as T;
+  throw new Error(extractDetail(data, `Request failed (${res.status})`));
+}
+
 async function backendPut<T>(path: string, body: unknown = {}): Promise<T | null> {
   try {
     const res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
@@ -85,10 +93,10 @@ function adaptAsset(raw: Record<string, unknown>): Asset {
   };
   return {
     id: String(raw.id ?? ''),
-    assetCode: String(raw.serial_number ?? raw.asset_name ?? raw.id ?? ''),
+    assetCode: String(raw.serial_number ?? raw.id ?? ''),
     name: String(raw.asset_name ?? ''),
     category: String(raw.category ?? ''),
-    location: String(raw.location ?? raw.lab_id ?? ''),
+    location: String(raw.lab_name ?? raw.location ?? raw.lab_id ?? ''),
     labId: String(raw.lab_id ?? ''),
     status: statusMap[String(raw.status ?? '').toLowerCase()] ?? 'Active',
     warranty: String(raw.warranty_expiry ?? ''),
@@ -274,6 +282,36 @@ function toAppRole(rawRole: string): Role {
   return 'service';
 }
 
+/**
+ * Extract a human-readable message from a FastAPI error response.
+ * Pydantic validation errors send `detail` as an array of objects;
+ * other errors send it as a plain string.
+ */
+function extractDetail(data: unknown, fallback: string): string {
+  if (!data || typeof data !== 'object') return fallback;
+  const detail = (data as Record<string, unknown>).detail;
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as Record<string, unknown>;
+    const msg = String(first.msg ?? first.message ?? '');
+    const loc = Array.isArray(first.loc) ? (first.loc as string[]).slice(1).join(' → ') : '';
+    return loc ? `${loc}: ${msg}` : msg;
+  }
+  return fallback;
+}
+
+/** Map frontend Role → backend role_name stored in the DB */
+function toBackendRole(role: Role): string {
+  const map: Record<Role, string> = {
+    admin: 'admin',
+    lab: 'lab_technician',
+    service: 'service_staff',
+    purchase_dept: 'purchase_dept'
+  };
+  return map[role];
+}
+
 function nextMaintenanceHistoryEntry(updatedBy: MaintenanceHistoryEntry['updatedBy'], status: MaintenanceHistoryEntry['status'], remarks: string): MaintenanceHistoryEntry {
   return { id: `h-${Math.random().toString(36).slice(2, 8)}`, date: new Date().toISOString().slice(0, 10), updatedBy, status, remarks };
 }
@@ -317,41 +355,28 @@ export const api = {
   },
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  async login(email: string, password: string, selectedRole?: Role): Promise<{ token: string; user: User }> {
-    try {
-      const res = await backendFetch('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (res.ok && data.access_token) {
-        const role = toAppRole(data.user?.role ?? '');
-        return {
-          token: data.access_token,
-          user: { id: data.user.id, name: data.user.name ?? email, email: data.user.email ?? email, role, labId: data.user.lab_id }
-        };
-      }
-      if (!res.ok) throw new Error(data.detail ?? 'Login failed');
-    } catch (err) {
-      if (err instanceof Error && !err.message.includes('fetch')) throw err;
-    }
-
-    // Fallback to demo credentials
-    const matchedRole = selectedRole ?? (Object.keys(usersByRole) as Role[]).find((r) => usersByRole[r].email === email);
-    if (!matchedRole) throw new Error('Invalid credentials.');
-    const profile = usersByRole[matchedRole as Role];
-    if (profile.email !== email || profile.password !== password) throw new Error('Invalid credentials.');
-    return delay({ token: `demo-jwt-${matchedRole}`, user: { id: `user-${matchedRole}`, name: profile.name, email, role: matchedRole as Role, labId: profile.labId } });
+  async login(email: string, password: string, _selectedRole?: Role): Promise<{ token: string; user: User }> {
+    const res = await backendFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(extractDetail(data, 'Invalid email or password.'));
+    const role = toAppRole(data.user?.role ?? '');
+    return {
+      token: data.access_token,
+      user: { id: data.user.id, name: data.user.name ?? email, email: data.user.email ?? email, role, labId: data.user.lab_id }
+    };
   },
 
-  async register(email: string, password: string, fullName: string, role: Role): Promise<void> {
+  async register(email: string, password: string, fullName: string, role: Role, deptName: string): Promise<void> {
     const res = await backendFetch('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, name: fullName, role })
+      body: JSON.stringify({ email, password, name: fullName, role: toBackendRole(role), dept_name: deptName })
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error((data as { detail?: string }).detail ?? 'Registration failed');
+      throw new Error(extractDetail(data, 'Registration failed. Please try again.'));
     }
   },
 
@@ -391,20 +416,30 @@ export const api = {
   // ── Assets ────────────────────────────────────────────────────────────────
   async getAssets(role: Role, labId?: string): Promise<Asset[]> {
     const params = role === 'lab' && labId ? `?lab_id=${labId}` : '';
-    const data = await backendGet<Record<string, unknown>[]>(`/assets${params}`);
+    const data = await backendGet<Record<string, unknown>[]>(`/assets/${params}`);
     if (data) return data.map(adaptAsset);
     if (role === 'lab') return delay(assets.filter((a) => a.labId === labId));
     return delay([...assets]);
   },
 
+  async getAssetCategories(): Promise<{ id: string; category_name: string }[]> {
+    const data = await backendGet<{ id: string; category_name: string }[]>('/assets/categories');
+    return data ?? [];
+  },
+
   async createAsset(role: Role, payload: Omit<Asset, 'id'>): Promise<Asset> {
     assertPermission(role, 'asset:create');
-    const body = { asset_name: payload.name, category: payload.category, lab_id: payload.labId, serial_number: payload.assetCode, warranty_expiry: payload.warranty, status: payload.status.toLowerCase().replace(' ', '_') };
-    const data = await backendPost<Record<string, unknown>>('/assets', body);
-    if (data) return adaptAsset(data);
-    const created: Asset = { id: `asset-${Math.random().toString(36).slice(2, 8)}`, ...payload };
-    assets = [created, ...assets];
-    return delay(created);
+    const body: Record<string, unknown> = {
+      asset_name: payload.name,
+      category: payload.category,
+      lab_id: payload.labId || undefined,
+      serial_number: payload.assetCode || undefined,
+      warranty_expiry: payload.warranty || undefined,
+      purchase_date: payload.purchaseDate || undefined,
+      status: payload.status.toLowerCase().replace(/ /g, '_')
+    };
+    const data = await backendPostOrThrow<Record<string, unknown>>('/assets/', body);
+    return adaptAsset(data);
   },
 
   async updateAsset(role: Role, assetId: string, changes: Partial<Omit<Asset, 'id'>>): Promise<Asset> {

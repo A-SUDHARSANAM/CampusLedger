@@ -40,7 +40,9 @@ class AssetKPIs(BaseModel):
     total_assets: int
     active_assets: int
     damaged_assets: int
-    under_maintenance_assets: int
+    under_maintenance: int
+    pending_maintenance: int
+    labs_count: int
 
 
 class DashboardResponse(BaseModel):
@@ -159,11 +161,16 @@ def analytics_dashboard(
                 float(a["condition_rating"])
             )
 
+    labs_list    = sb.table("labs").select("id").execute().data or []
+    pending_maint = sb.table("maintenance_requests").select("id").eq("status", "pending").execute().data or []
+
     asset_kpis = AssetKPIs(
-        total_assets             = len(assets),
-        active_assets            = status_counts.get("active", 0),
-        damaged_assets           = status_counts.get("damaged", 0),
-        under_maintenance_assets = status_counts.get("under_maintenance", 0),
+        total_assets       = len(assets),
+        active_assets      = status_counts.get("active", 0),
+        damaged_assets     = status_counts.get("damaged", 0),
+        under_maintenance  = status_counts.get("under_maintenance", 0),
+        pending_maintenance= len(pending_maint),
+        labs_count         = len(labs_list),
     )
 
     # ── 2. Assets by location (lab_name) ───────────────────────────────────
@@ -258,11 +265,16 @@ def asset_summary(
     for a in assets:
         counts[a.get("status") or "unknown"] += 1
 
+    pending = sb.table("maintenance_requests").select("id").eq("status", "pending").execute().data or []
+    labs    = sb.table("labs").select("id").execute().data or []
+
     return AssetKPIs(
-        total_assets             = len(assets),
-        active_assets            = counts.get("active", 0),
-        damaged_assets           = counts.get("damaged", 0),
-        under_maintenance_assets = counts.get("under_maintenance", 0),
+        total_assets       = len(assets),
+        active_assets      = counts.get("active", 0),
+        damaged_assets     = counts.get("damaged", 0),
+        under_maintenance  = counts.get("under_maintenance", 0),
+        pending_maintenance= len(pending),
+        labs_count         = len(labs),
     )
 
 

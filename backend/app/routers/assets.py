@@ -25,6 +25,7 @@ class AssetOut(BaseModel):
     asset_name: str
     category: Optional[str] = None
     lab_id: Optional[str] = None
+    lab_name: Optional[str] = None
     serial_number: Optional[str] = None
     purchase_date: Optional[str] = None
     warranty_expiry: Optional[str] = None
@@ -65,9 +66,46 @@ class AssetUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Helper: resolve category name → category_id (creates if missing)
+# ---------------------------------------------------------------------------
+def _resolve_category_id(sb: Client, category_name: str) -> Optional[str]:
+    """Look up asset_categories by name (case-insensitive). Auto-creates if absent."""
+    norm = category_name.strip().lower().replace(" ", "_").replace("-", "_")
+    res = sb.table("asset_categories").select("id").ilike("category_name", norm).limit(1).execute()
+    if res.data:
+        return res.data[0]["id"]
+    # Auto-create
+    new_cat = sb.table("asset_categories").insert({"category_name": norm}).execute()
+    return new_cat.data[0]["id"] if new_cat.data else None
+
+
+# Helper: build a full AssetOut dict from a raw DB row + lookups
+def _enrich_asset(a: dict, lab_map: dict, cat_map: dict) -> dict:
+    cat_id = a.get("category_id")
+    lab_id = a.get("lab_id")
+    return {
+        **a,
+        "category": cat_map.get(cat_id) if cat_id else None,
+        "lab_name": lab_map.get(lab_id) if lab_id else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /assets/categories  (admin + lab_tech)
+# ---------------------------------------------------------------------------
+@router.get("/categories", summary="List asset categories")
+def list_categories(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin_or_tech),
+):
+    result = sb.table("asset_categories").select("id, category_name").order("category_name").execute()
+    return result.data or []
+
+
+# ---------------------------------------------------------------------------
 # GET /assets
 #   admin    -> all assets (filterable by lab, category, status, search)
-#   lab_tech -> only assets in their assigned lab
+#   lab_tech -> assets filtered by optional lab_id param
 # ---------------------------------------------------------------------------
 @router.get("/", response_model=List[AssetOut], summary="List assets")
 def list_assets(
@@ -88,25 +126,40 @@ def list_assets(
 
     q = sb.table("assets").select("*").range(skip, skip + limit - 1).order("asset_name")
 
-    # Lab technicians are scoped to their own lab
-    if current_user["role"] == "lab_technician":
-        # Fetch the lab this technician belongs to
-        lab_result = sb.table("labs").select("id").eq("technician_id", current_user["id"]).maybe_single().execute()
-        if not lab_result.data:
-            return []
-        q = q.eq("lab_id", lab_result.data["id"])
-    elif lab_id:
+    if lab_id:
         q = q.eq("lab_id", lab_id)
-
-    if category:
-        q = q.eq("category", category)
     if asset_status:
         q = q.eq("status", asset_status)
     if search:
         q = q.or_(f"asset_name.ilike.%{search}%,serial_number.ilike.%{search}%")
 
+    # Filter by category name → look up category_id first
+    if category:
+        norm = category.strip().lower().replace(" ", "_")
+        cat_res = sb.table("asset_categories").select("id").ilike("category_name", norm).limit(1).execute()
+        if cat_res.data:
+            q = q.eq("category_id", cat_res.data[0]["id"])
+        else:
+            return []  # unknown category → empty result
+
     result = q.execute()
-    return result.data or []
+    assets_data = result.data or []
+
+    # Batch-resolve lab names
+    lab_ids = list({a["lab_id"] for a in assets_data if a.get("lab_id")})
+    lab_map: dict = {}
+    if lab_ids:
+        labs_res = sb.table("labs").select("id, lab_name").in_("id", lab_ids).execute()
+        lab_map = {lab["id"]: lab["lab_name"] for lab in (labs_res.data or [])}
+
+    # Batch-resolve category names
+    cat_ids = list({a["category_id"] for a in assets_data if a.get("category_id")})
+    cat_map: dict = {}
+    if cat_ids:
+        cats_res = sb.table("asset_categories").select("id, category_name").in_("id", cat_ids).execute()
+        cat_map = {c["id"]: c["category_name"] for c in (cats_res.data or [])}
+
+    return [_enrich_asset(a, lab_map, cat_map) for a in assets_data]
 
 
 # ---------------------------------------------------------------------------
@@ -121,14 +174,32 @@ def create_asset(
     payload.validate_status()
 
     if payload.serial_number:
-        existing = sb.table("assets").select("id").eq("serial_number", payload.serial_number).maybe_single().execute()
+        existing = sb.table("assets").select("id").eq("serial_number", payload.serial_number).limit(1).execute()
         if existing.data:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Serial number already exists")
 
-    result = sb.table("assets").insert(payload.model_dump(exclude_none=True)).execute()
+    # Build insert dict — exclude the text `category` field; use category_id instead
+    insert_data = payload.model_dump(exclude_none=True, exclude={"category"})
+    if payload.category:
+        cat_id = _resolve_category_id(sb, payload.category)
+        if cat_id:
+            insert_data["category_id"] = cat_id
+
+    result = sb.table("assets").insert(insert_data).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create asset")
-    return result.data[0]
+
+    asset = result.data[0]
+    # Resolve names for response
+    lab_map = {}
+    if asset.get("lab_id"):
+        lr = sb.table("labs").select("id, lab_name").eq("id", asset["lab_id"]).limit(1).execute()
+        lab_map = {r["id"]: r["lab_name"] for r in (lr.data or [])}
+    cat_map = {}
+    if asset.get("category_id"):
+        cr = sb.table("asset_categories").select("id, category_name").eq("id", asset["category_id"]).limit(1).execute()
+        cat_map = {r["id"]: r["category_name"] for r in (cr.data or [])}
+    return _enrich_asset(asset, lab_map, cat_map)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +214,7 @@ def update_asset(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin_or_tech),
 ):
-    existing = sb.table("assets").select("*").eq("id", asset_id).maybe_single().execute()
+    existing = sb.table("assets").select("*").eq("id", asset_id).limit(1).execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
 
@@ -167,8 +238,28 @@ def update_asset(
                 detail=f"Lab technicians can only update: {', '.join(sorted(allowed))}",
             )
 
+    # Resolve category name → category_id
+    if "category" in update_data:
+        cat_name = update_data.pop("category")
+        if cat_name:
+            cat_id = _resolve_category_id(sb, cat_name)
+            if cat_id:
+                update_data["category_id"] = cat_id
+
+    if not update_data:
+        return existing.data[0]
+
     result = sb.table("assets").update(update_data).eq("id", asset_id).execute()
-    return result.data[0]
+    asset = result.data[0]
+    lab_map = {}
+    if asset.get("lab_id"):
+        lr = sb.table("labs").select("id, lab_name").eq("id", asset["lab_id"]).limit(1).execute()
+        lab_map = {r["id"]: r["lab_name"] for r in (lr.data or [])}
+    cat_map = {}
+    if asset.get("category_id"):
+        cr = sb.table("asset_categories").select("id, category_name").eq("id", asset["category_id"]).limit(1).execute()
+        cat_map = {r["id"]: r["category_name"] for r in (cr.data or [])}
+    return _enrich_asset(asset, lab_map, cat_map)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +271,7 @@ def delete_asset(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    existing = sb.table("assets").select("id").eq("id", asset_id).maybe_single().execute()
+    existing = sb.table("assets").select("id").eq("id", asset_id).limit(1).execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     sb.table("assets").delete().eq("id", asset_id).execute()
