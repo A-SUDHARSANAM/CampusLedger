@@ -21,14 +21,14 @@ VALID_ROLES = {"admin", "lab_technician", "service_staff", "purchase_dept"}
 class UserOut(BaseModel):
     id: str
     email: str
-    full_name: str
-    role: str
-    is_active: bool
-    is_approved: bool
-    phone: Optional[str] = None
-    department: Optional[str] = None
-    avatar_url: Optional[str] = None
+    name: str                           # DB column is `name` (not full_name)
+    role: Optional[str] = None          # resolved via JOIN with roles table
+    status: str = "pending"             # 'active' | 'pending'
+    department_id: Optional[str] = None
     created_at: Optional[str] = None
+    # Derived fields kept for frontend compatibility
+    is_approved: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 
 class UpdateRoleRequest(BaseModel):
@@ -40,6 +40,19 @@ class UpdateRoleRequest(BaseModel):
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"role must be one of: {', '.join(sorted(VALID_ROLES))}",
             )
+
+
+# ---------------------------------------------------------------------------
+# Helper: flatten role JOIN and derive is_active / is_approved from status
+# ---------------------------------------------------------------------------
+def _enrich_user(row: dict) -> dict:
+    row = dict(row)
+    roles_obj = row.pop("roles", None) or {}
+    row["role"] = roles_obj.get("role_name", row.get("role", ""))
+    is_active = row.get("status") == "active"
+    row["is_active"] = is_active
+    row["is_approved"] = is_active
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -61,17 +74,33 @@ def list_users(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"role must be one of: {', '.join(sorted(VALID_ROLES))}",
         )
-    q = sb.table("users").select("*").range(skip, skip + limit - 1).order("created_at", desc=True)
+
+    q = (
+        sb.table("users")
+        .select("*, roles(role_name)")
+        .range(skip, skip + limit - 1)
+        .order("created_at", desc=True)
+    )
+
+    # Filter by role: resolve role_id from the roles lookup table
     if role:
-        q = q.eq("role", role)
-    if is_active is not None:
-        q = q.eq("is_active", is_active)
-    if is_approved is not None:
-        q = q.eq("is_approved", is_approved)
+        role_res = sb.table("roles").select("id").eq("role_name", role).limit(1).execute()
+        if role_res.data:
+            q = q.eq("role_id", role_res.data[0]["id"])
+        else:
+            return []
+
+    # Map is_active / is_approved query params → status column
+    if is_active is not None or is_approved is not None:
+        active_flag = is_active if is_active is not None else is_approved
+        q = q.eq("status", "active" if active_flag else "pending")
+
+    # Search by name or email
     if search:
-        q = q.or_(f"full_name.ilike.%{search}%,email.ilike.%{search}%")
+        q = q.or_(f"name.ilike.%{search}%,email.ilike.%{search}%")
+
     result = q.execute()
-    return result.data or []
+    return [_enrich_user(row) for row in (result.data or [])]
 
 
 # ---------------------------------------------------------------------------
@@ -83,10 +112,16 @@ def get_user(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    result = sb.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    result = (
+        sb.table("users")
+        .select("*, roles(role_name)")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
     if not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return result.data
+    return _enrich_user(dict(result.data))
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +133,21 @@ def approve_user(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    existing = sb.table("users").select("id, is_approved").eq("id", user_id).maybe_single().execute()
+    existing = (
+        sb.table("users")
+        .select("id, status, roles(role_name)")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if existing.data.get("is_approved"):
+    if existing.data.get("status") == "active":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already approved")
-    result = sb.table("users").update({"is_approved": True, "is_active": True}).eq("id", user_id).execute()
-    return result.data[0]
+    result = sb.table("users").update({"status": "active"}).eq("id", user_id).execute()
+    row = dict(result.data[0])
+    row["roles"] = existing.data.get("roles")
+    return _enrich_user(row)
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +169,22 @@ def update_role(
     existing = sb.table("users").select("id").eq("id", user_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    result = sb.table("users").update({"role": payload.role}).eq("id", user_id).execute()
-    return result.data[0]
+    # Resolve role_id by role name
+    role_res = sb.table("roles").select("id").eq("role_name", payload.role).limit(1).execute()
+    if not role_res.data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Role '{payload.role}' not found in database",
+        )
+    result = (
+        sb.table("users")
+        .update({"role_id": role_res.data[0]["id"]})
+        .eq("id", user_id)
+        .execute()
+    )
+    row = dict(result.data[0])
+    row["roles"] = {"role_name": payload.role}
+    return _enrich_user(row)
 
 
 # ---------------------------------------------------------------------------
@@ -144,10 +201,18 @@ def deactivate_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Admins cannot deactivate their own account",
         )
-    existing = sb.table("users").select("id, is_active").eq("id", user_id).maybe_single().execute()
+    existing = (
+        sb.table("users")
+        .select("id, status, roles(role_name)")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if not existing.data.get("is_active", True):
+    if existing.data.get("status") != "active":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already deactivated")
-    result = sb.table("users").update({"is_active": False}).eq("id", user_id).execute()
-    return result.data[0]
+    result = sb.table("users").update({"status": "pending"}).eq("id", user_id).execute()
+    row = dict(result.data[0])
+    row["roles"] = existing.data.get("roles")
+    return _enrich_user(row)

@@ -1,111 +1,128 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from collections import Counter
+from typing import Any, Dict, List
 
-from app.core.dependencies import get_db, require_admin, require_any_role
-from app.models.asset import Asset, AssetStatus, AssetCategory
-from app.models.lab import Lab
-from app.models.maintenance import MaintenanceRequest, MaintenanceStatus
-from app.models.purchase import PurchaseOrder, PurchaseOrderStatus
-from app.models.user import User
-from app.schemas.report import (
-    ReportResponse, DashboardReport, AssetSummary, MaintenanceSummary,
-    PurchaseSummary, AssetsByCategory, AssetsByLab, MaintenanceByStatus,
-)
+from fastapi import APIRouter, Depends
+from supabase import Client
+
+from app.db.supabase import get_admin_client
+from app.routers.auth_routes import require_role
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
+_require_admin = require_role("admin")
 
 
-@router.get("/dashboard", response_model=ReportResponse, summary="Full dashboard report (admin only)")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _count(rows: list, key: str, value: str) -> int:
+    return sum(1 for r in rows if r.get(key) == value)
+
+
+# ---------------------------------------------------------------------------
+# GET /reports/dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/dashboard", summary="Full dashboard report (admin only)")
 def get_dashboard_report(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    # Asset aggregates
-    asset_counts = db.query(Asset.status, func.count(Asset.id)).group_by(Asset.status).all()
-    asset_map = {s.value: 0 for s in AssetStatus}
-    total_assets = 0
-    for s, c in asset_counts:
-        asset_map[s.value] = c
-        total_assets += c
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+) -> Dict[str, Any]:
+    assets = sb.table("assets").select("id, status, category_id, lab_id").execute().data or []
+    maintenance = sb.table("maintenance_requests").select("id, status, priority").execute().data or []
+    orders = sb.table("purchase_orders").select("id, order_status, payment_status").execute().data or []
+    labs_count   = len(sb.table("labs").select("id").execute().data or [])
+    users_count  = len(sb.table("users").select("id").eq("status", "active").execute().data or [])
 
-    asset_summary = AssetSummary(
-        total=total_assets,
-        active=asset_map.get("active", 0),
-        under_maintenance=asset_map.get("under_maintenance", 0),
-        inactive=asset_map.get("inactive", 0),
-        disposed=asset_map.get("disposed", 0),
-    )
+    asset_statuses = Counter(r.get("status") for r in assets)
+    maint_statuses = Counter(r.get("status") for r in maintenance)
+    order_statuses = Counter(r.get("order_status") for r in orders)
 
-    # Maintenance aggregates
-    maint_counts = db.query(MaintenanceRequest.status, func.count(MaintenanceRequest.id)).group_by(MaintenanceRequest.status).all()
-    maint_map = {s.value: 0 for s in MaintenanceStatus}
-    total_maint = 0
-    for s, c in maint_counts:
-        maint_map[s.value] = c
-        total_maint += c
+    return {
+        "dashboard": {
+            "assets": {
+                "total":             len(assets),
+                "active":            asset_statuses.get("active", 0),
+                "under_maintenance": asset_statuses.get("under_maintenance", 0),
+                "damaged":           asset_statuses.get("damaged", 0),
+            },
+            "maintenance": {
+                "total":       len(maintenance),
+                "pending":     maint_statuses.get("pending", 0),
+                "assigned":    maint_statuses.get("assigned", 0),
+                "in_progress": maint_statuses.get("in_progress", 0),
+                "completed":   maint_statuses.get("completed", 0),
+            },
+            "purchase": {
+                "total":    len(orders),
+                "pending":  order_statuses.get("pending", 0),
+                "approved": order_statuses.get("approved", 0),
+                "rejected": order_statuses.get("rejected", 0),
+                "received": order_statuses.get("received", 0),
+            },
+            "labs_count":  labs_count,
+            "users_count": users_count,
+        },
+    }
 
-    maintenance_summary = MaintenanceSummary(
-        total=total_maint,
-        pending=maint_map.get("pending", 0),
-        in_progress=maint_map.get("in_progress", 0),
-        completed=maint_map.get("completed", 0),
-        cancelled=maint_map.get("cancelled", 0),
-    )
 
-    # Purchase aggregates
-    po_counts = db.query(PurchaseOrder.status, func.count(PurchaseOrder.id)).group_by(PurchaseOrder.status).all()
-    po_map = {s.value: 0 for s in PurchaseOrderStatus}
-    total_po = 0
-    for s, c in po_counts:
-        po_map[s.value] = c
-        total_po += c
+# ---------------------------------------------------------------------------
+# GET /reports/assets/by-status
+# ---------------------------------------------------------------------------
 
-    total_spend_result = db.query(func.sum(PurchaseOrder.total_amount)).filter(
-        PurchaseOrder.status == PurchaseOrderStatus.received
-    ).scalar()
+@router.get("/assets/by-status", summary="Asset counts grouped by status (admin only)")
+def assets_by_status(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+) -> List[Dict[str, Any]]:
+    assets = sb.table("assets").select("status").execute().data or []
+    counts = Counter(r.get("status") for r in assets)
+    return [{"status": s, "count": c} for s, c in sorted(counts.items())]
 
-    purchase_summary = PurchaseSummary(
-        total=total_po,
-        draft=po_map.get("draft", 0),
-        pending_approval=po_map.get("pending_approval", 0),
-        approved=po_map.get("approved", 0),
-        received=po_map.get("received", 0),
-        rejected=po_map.get("rejected", 0),
-        total_spend=float(total_spend_result or 0),
-    )
 
-    labs_count = db.query(func.count(Lab.id)).scalar()
-    users_count = db.query(func.count(User.id)).filter(User.is_active).scalar()
+# ---------------------------------------------------------------------------
+# GET /reports/assets/by-lab
+# ---------------------------------------------------------------------------
 
-    # Assets by category
-    by_category = db.query(Asset.category, func.count(Asset.id)).group_by(Asset.category).all()
-    assets_by_category = [AssetsByCategory(category=c.value, count=cnt) for c, cnt in by_category]
+@router.get("/assets/by-lab", summary="Asset counts grouped by lab (admin only)")
+def assets_by_lab(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+) -> List[Dict[str, Any]]:
+    assets = sb.table("assets").select("lab_id, labs(lab_name)").execute().data or []
+    counts: Dict[str, Dict[str, Any]] = {}
+    for row in assets:
+        lab_id   = row.get("lab_id") or "unassigned"
+        lab_name = (row.get("labs") or {}).get("lab_name", "Unassigned")
+        if lab_id not in counts:
+            counts[lab_id] = {"lab_id": lab_id, "lab_name": lab_name, "count": 0}
+        counts[lab_id]["count"] += 1
+    return list(counts.values())
 
-    # Assets by lab
-    by_lab = (
-        db.query(Lab.name, Lab.lab_code, func.count(Asset.id))
-        .outerjoin(Asset, Asset.lab_id == Lab.id)
-        .group_by(Lab.id, Lab.name, Lab.lab_code)
-        .all()
-    )
-    assets_by_lab = [AssetsByLab(lab_name=n, lab_code=lc, count=cnt) for n, lc, cnt in by_lab]
 
-    # Maintenance by status
-    maint_by_status = [
-        MaintenanceByStatus(status=s.value, count=maint_map.get(s.value, 0))
-        for s in MaintenanceStatus
-    ]
+# ---------------------------------------------------------------------------
+# GET /reports/maintenance/by-status
+# ---------------------------------------------------------------------------
 
-    return ReportResponse(
-        dashboard=DashboardReport(
-            assets=asset_summary,
-            maintenance=maintenance_summary,
-            purchase=purchase_summary,
-            labs_count=labs_count or 0,
-            users_count=users_count or 0,
-        ),
-        assets_by_category=assets_by_category,
-        assets_by_lab=assets_by_lab,
-        maintenance_by_status=maint_by_status,
-    )
+@router.get("/maintenance/by-status", summary="Maintenance request counts grouped by status (admin only)")
+def maintenance_by_status(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+) -> List[Dict[str, Any]]:
+    rows = sb.table("maintenance_requests").select("status").execute().data or []
+    counts = Counter(r.get("status") for r in rows)
+    return [{"status": s, "count": c} for s, c in sorted(counts.items())]
+
+
+# ---------------------------------------------------------------------------
+# GET /reports/maintenance/by-priority
+# ---------------------------------------------------------------------------
+
+@router.get("/maintenance/by-priority", summary="Maintenance request counts grouped by priority (admin only)")
+def maintenance_by_priority(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+) -> List[Dict[str, Any]]:
+    rows = sb.table("maintenance_requests").select("priority").execute().data or []
+    counts = Counter(r.get("priority") for r in rows)
+    return [{"priority": p, "count": c} for p, c in sorted(counts.items())]

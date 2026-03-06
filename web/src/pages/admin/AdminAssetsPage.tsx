@@ -58,6 +58,8 @@ export function AdminAssetsPage() {
     setForm({ ...EMPTY_FORM });
     setFormError(null);
     setShowModal(true);
+    // Reload categories each time the modal opens so they're always fresh
+    api.getAssetCategories().then(setCategoryList).catch(() => {});
   }
 
   function closeModal() {
@@ -275,12 +277,19 @@ export function AdminAssetsPage() {
 
                 <div className="form-field">
                   <label>Category<span className="required-star">*</span></label>
-                  <select className="select" value={form.category} onChange={(e) => setField('category', e.target.value)} required>
-                    <option value="">— Select Category —</option>
+                  <input
+                    className="input"
+                    list="category-suggestions"
+                    placeholder="e.g. Computer, Furniture, Lab Equipment"
+                    value={form.category}
+                    onChange={(e) => setField('category', e.target.value)}
+                    required
+                  />
+                  <datalist id="category-suggestions">
                     {categoryList.map((c) => (
                       <option key={c.id} value={c.category_name}>{formatCategoryName(c.category_name)}</option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
 
                 <div className="form-field">

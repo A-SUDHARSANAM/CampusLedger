@@ -14,6 +14,7 @@ from app.routers import (
     purchase_router,
     analytics_router,
     notifications_router,
+    reports_router,
 )
 
 API_PREFIX = "/api/v1"
@@ -68,6 +69,7 @@ app.include_router(maintenance_router,   prefix=API_PREFIX)
 app.include_router(purchase_router,      prefix=API_PREFIX)
 app.include_router(analytics_router,     prefix=API_PREFIX)
 app.include_router(notifications_router, prefix=API_PREFIX)
+app.include_router(reports_router,       prefix=API_PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

@@ -10,5 +10,6 @@ export type User = {
 
 export type AuthState = {
   token: string | null;
+  refreshToken: string | null;
   user: User | null;
 };

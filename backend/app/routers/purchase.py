@@ -185,7 +185,7 @@ def admin_approve(
 def create_order(
     payload: OrderIn,
     sb: Client = Depends(get_admin_client),
-    current_user: dict = Depends(_require_purchase_dept),
+    current_user: dict = Depends(_require_admin_or_pur),
 ):
     existing = sb.table("purchase_orders").select("id, status").eq("id", payload.request_id).maybe_single().execute()
     if not existing.data:
@@ -213,12 +213,12 @@ def create_order(
 @router.post(
     "/{order_id}/confirm-payment",
     response_model=PurchaseOut,
-    summary="Confirm payment for an order (purchase dept)",
+    summary="Confirm payment for an order (admin or purchase dept)",
 )
 def confirm_payment(
     order_id: str,
     sb: Client = Depends(get_admin_client),
-    _: dict = Depends(_require_purchase_dept),
+    _: dict = Depends(_require_admin_or_pur),
 ):
     existing = sb.table("purchase_orders").select("id, status").eq("id", order_id).maybe_single().execute()
     if not existing.data:
@@ -248,7 +248,7 @@ def upload_invoice(
     actual_delivery_date: Optional[str] = Form(None),
     invoice: UploadFile = File(..., description="Invoice PDF or image"),
     sb: Client = Depends(get_admin_client),
-    current_user: dict = Depends(_require_purchase_dept),
+    current_user: dict = Depends(_require_admin_or_pur),
 ):
     existing = sb.table("purchase_orders").select("id, status").eq("id", order_id).maybe_single().execute()
     if not existing.data:
@@ -272,7 +272,10 @@ def upload_invoice(
 
     # Notify admin that invoice is ready for review
     try:
-        admin_rows = sb.table("users").select("id").eq("role", "admin").execute().data or []
+        role_res = sb.table("roles").select("id").eq("role_name", "admin").limit(1).execute()
+        admin_rows = []
+        if role_res.data:
+            admin_rows = sb.table("users").select("id").eq("role_id", role_res.data[0]["id"]).execute().data or []
         notifications = [
             {
                 "user_id": adm["id"],

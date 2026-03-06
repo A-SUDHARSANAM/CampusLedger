@@ -74,7 +74,11 @@ def notify_many(
 def _admin_ids(sb: Client) -> list[str]:
     """Return the IDs of all active admin users."""
     try:
-        rows = sb.table("users").select("id").eq("role", "admin").eq("is_active", True).execute().data or []
+        role_res = sb.table("roles").select("id").eq("role_name", "admin").limit(1).execute()
+        if not role_res.data:
+            return []
+        role_id = role_res.data[0]["id"]
+        rows = sb.table("users").select("id").eq("role_id", role_id).eq("status", "active").execute().data or []
         return [r["id"] for r in rows]
     except Exception as exc:
         logger.warning("Failed to fetch admin IDs: %s", exc)

@@ -32,15 +32,29 @@ VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 class MaintenanceOut(BaseModel):
     id: str
     asset_id: Optional[str] = None
-    reported_by_id: Optional[str] = None
-    assigned_to_id: Optional[str] = None
-    description: str
+    # DB column names
+    reported_by: Optional[str] = None
+    assigned_staff: Optional[str] = None
+    issue_description: Optional[str] = None
     priority: Optional[str] = None
     status: str
     image_url: Optional[str] = None
-    notes: Optional[str] = None
+    qr_code: Optional[str] = None
     created_at: Optional[str] = None
-    resolved_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    # Aliased fields kept for frontend compatibility
+    reported_by_id: Optional[str] = None
+    assigned_to_id: Optional[str] = None
+    description: Optional[str] = None
+
+
+def _remap(row: dict) -> dict:
+    """Enrich a DB row with alias fields the frontend expects."""
+    row = dict(row)
+    row["reported_by_id"] = row.get("reported_by")
+    row["assigned_to_id"] = row.get("assigned_staff")
+    row["description"]    = row.get("issue_description", "")
+    return row
 
 
 class ReportRequest(BaseModel):
@@ -88,12 +102,12 @@ def report_issue(
             detail=f"priority must be one of: {', '.join(sorted(VALID_PRIORITIES))}",
         )
     data = {
-        "asset_id":        payload.asset_id,
-        "description":     payload.description,
-        "priority":        payload.priority,
-        "image_url":       payload.image_url,
-        "reported_by_id":  current_user["id"],
-        "status":          "pending",
+        "asset_id":          payload.asset_id,
+        "issue_description": payload.description,   # correct DB column
+        "priority":          payload.priority,
+        "image_url":         payload.image_url,
+        "reported_by":       current_user["id"],     # correct DB column
+        "status":            "pending",
     }
     result = sb.table("maintenance_requests").insert({k: v for k, v in data.items() if v is not None}).execute()
     if not result.data:
@@ -103,7 +117,7 @@ def report_issue(
         notify_issue_raised(sb, row["id"], payload.priority)
     except Exception:
         pass
-    return row
+    return _remap(row)
 
 
 # ---------------------------------------------------------------------------
@@ -126,9 +140,9 @@ def list_maintenance(
 
     role = current_user["role"]
     if role == "service_staff":
-        q = q.eq("assigned_to_id", current_user["id"])
+        q = q.eq("assigned_staff", current_user["id"])   # correct DB column
     elif role == "lab_technician":
-        q = q.eq("reported_by_id", current_user["id"])
+        q = q.eq("reported_by", current_user["id"])       # correct DB column
 
     if req_status:
         if req_status not in VALID_STATUSES:
@@ -142,7 +156,7 @@ def list_maintenance(
     if priority:
         q = q.eq("priority", priority)
 
-    return q.execute().data or []
+    return [_remap(r) for r in q.execute().data or []]
 
 
 # ---------------------------------------------------------------------------
@@ -163,14 +177,21 @@ def assign_request(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot reassign a completed request")
 
     # Verify assignee exists and is service_staff
-    user = sb.table("users").select("id, role").eq("id", payload.assigned_to_id).maybe_single().execute()
-    if not user.data:
+    user_res = (
+        sb.table("users")
+        .select("id, roles(role_name)")
+        .eq("id", payload.assigned_to_id)
+        .maybe_single()
+        .execute()
+    )
+    if not user_res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignee not found")
-    if user.data["role"] != "service_staff":
+    assignee_role = (user_res.data.get("roles") or {}).get("role_name", "")
+    if assignee_role != "service_staff":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assignee must be a service_staff member")
 
     result = sb.table("maintenance_requests").update({
-        "assigned_to_id": payload.assigned_to_id,
+        "assigned_staff": payload.assigned_to_id,   # correct DB column
         "status": "assigned",
     }).eq("id", request_id).execute()
     row = result.data[0]
@@ -178,7 +199,7 @@ def assign_request(
         notify_staff_assigned(sb, request_id, payload.assigned_to_id)
     except Exception:
         pass
-    return row
+    return _remap(row)
 
 
 # ---------------------------------------------------------------------------
@@ -192,19 +213,19 @@ def update_progress(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_service),
 ):
-    existing = sb.table("maintenance_requests").select("id, status, assigned_to_id").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, status, assigned_staff").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
-    if existing.data.get("assigned_to_id") != current_user["id"]:
+    if existing.data.get("assigned_staff") != current_user["id"]:      # correct DB column
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this request")
     if existing.data["status"] == "completed":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is already completed")
 
     result = sb.table("maintenance_requests").update({
         "status": "in_progress",
-        "notes": payload.notes,
+        # notes column does not exist in schema; log is handled via maintenance_logs
     }).eq("id", request_id).execute()
-    return result.data[0]
+    return _remap(result.data[0])
 
 
 # ---------------------------------------------------------------------------
@@ -217,24 +238,24 @@ def complete_request(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_service),
 ):
-    existing = sb.table("maintenance_requests").select("id, status, assigned_to_id, reported_by_id").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, status, assigned_staff, reported_by").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
-    if existing.data.get("assigned_to_id") != current_user["id"]:
+    if existing.data.get("assigned_staff") != current_user["id"]:   # correct DB column
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not assigned to this request")
     if existing.data["status"] == "completed":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is already completed")
 
+    # updated_at is auto-set by DB trigger; no need to set resolved_at
     result = sb.table("maintenance_requests").update({
-        "status":      "completed",
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "status": "completed",
     }).eq("id", request_id).execute()
     row = result.data[0]
     try:
-        notify_maintenance_completed(sb, request_id, existing.data.get("reported_by_id"))
+        notify_maintenance_completed(sb, request_id, existing.data.get("reported_by"))  # correct DB column
     except Exception:
         pass
-    return row
+    return _remap(row)
 
 
 # ---------------------------------------------------------------------------
@@ -248,16 +269,16 @@ def generate_qr(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    req = sb.table("maintenance_requests").select("id, asset_id, assigned_to_id, status").eq("id", request_id).maybe_single().execute()
+    req = sb.table("maintenance_requests").select("id, asset_id, assigned_staff, status").eq("id", request_id).maybe_single().execute()
     if not req.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
-    if not req.data.get("assigned_to_id"):
+    if not req.data.get("assigned_staff"):    # correct DB column
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Request has not been assigned yet")
 
     payload = {
         "issue_id":          req.data["id"],
         "asset_id":          req.data["asset_id"],
-        "assigned_staff_id": req.data["assigned_to_id"],
+        "assigned_staff_id": req.data["assigned_staff"],   # correct DB column
     }
     qr_b64 = generate_qr_b64(payload)
     return {"request_id": request_id, "qr_base64": qr_b64}
@@ -287,22 +308,21 @@ def scan_qr(
     if assigned_staff != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This QR code is not assigned to you")
 
-    existing = sb.table("maintenance_requests").select("id, status, reported_by_id").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, status, reported_by").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
     if existing.data["status"] == "completed":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request is already completed")
 
     result = sb.table("maintenance_requests").update({
-        "status":      "completed",
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "status": "completed",
     }).eq("id", request_id).execute()
     row = result.data[0]
     try:
-        notify_maintenance_completed(sb, request_id, existing.data.get("reported_by_id"))
+        notify_maintenance_completed(sb, request_id, existing.data.get("reported_by"))  # correct DB column
     except Exception:
         pass
-    return row
+    return _remap(row)
 
 
 # ---------------------------------------------------------------------------
@@ -320,13 +340,13 @@ def upload_image(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_lab_tech),
 ):
-    existing = sb.table("maintenance_requests").select("id, reported_by_id").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, reported_by").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
-    if existing.data.get("reported_by_id") != current_user["id"]:
+    if existing.data.get("reported_by") != current_user["id"]:    # correct DB column
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only attach images to your own requests")
 
     public_url = upload_file(sb, Bucket.MAINTENANCE_IMAGES, request_id, image)
 
     result = sb.table("maintenance_requests").update({"image_url": public_url}).eq("id", request_id).execute()
-    return result.data[0]
+    return _remap(result.data[0])

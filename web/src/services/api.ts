@@ -20,9 +20,48 @@ import type {
 } from '../types/domain';
 
 // ── Configuration ─────────────────────────────────────────────────────────────
-const BASE_URL = 'http://localhost:8000/api/v1';
+const BASE_URL = '/api/v1';
 const TOKEN_STORAGE_KEY = 'campusledger_token';
+const REFRESH_TOKEN_STORAGE_KEY = 'campusledger_refresh_token';
 let authToken: string | null = localStorage.getItem(TOKEN_STORAGE_KEY);
+let refreshToken: string | null = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+
+/** Called whenever any backend request returns 401 and token refresh also fails. */
+let _onUnauthorized: (() => void) | null = null;
+
+// Prevent multiple concurrent refresh attempts
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (!refreshToken) return false;
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      authToken = data.access_token;
+      refreshToken = data.refresh_token;
+      if (authToken) localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
+      if (refreshToken) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
+}
+
+function handleUnauthorized(): never {
+  _onUnauthorized?.();
+  throw new Error('Session expired. Please log in again.');
+}
 
 // ── Backend HTTP helpers ───────────────────────────────────────────────────────
 async function backendFetch(path: string, options: RequestInit = {}): Promise<Response> {
@@ -38,15 +77,35 @@ async function backendFetch(path: string, options: RequestInit = {}): Promise<Re
 
 async function backendGet<T>(path: string): Promise<T | null> {
   try {
-    const res = await backendFetch(path);
+    let res = await backendFetch(path);
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await backendFetch(path);
+      } else {
+        handleUnauthorized();
+      }
+    }
+    if (res.status === 401) handleUnauthorized();
     if (res.ok) return (await res.json()) as T;
-  } catch { /* backend unavailable */ }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Session expired')) throw e;
+    /* backend unavailable */
+  }
   return null;
 }
 
 async function backendPost<T>(path: string, body: unknown): Promise<T | null> {
   try {
-    const res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+    let res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+      } else {
+        handleUnauthorized();
+      }
+    }
     if (res.ok) return (await res.json()) as T;
   } catch { /* fallback */ }
   return null;
@@ -54,7 +113,25 @@ async function backendPost<T>(path: string, body: unknown): Promise<T | null> {
 
 /** Like backendPost but throws a user-readable error on non-2xx responses. */
 async function backendPostOrThrow<T>(path: string, body: unknown): Promise<T> {
-  const res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+  let res: Response;
+  try {
+    res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+  } catch {
+    throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+  }
+  if (res.status === 401) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      try {
+        res = await backendFetch(path, { method: 'POST', body: JSON.stringify(body) });
+      } catch {
+        throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+      }
+    } else {
+      handleUnauthorized();
+    }
+  }
+  if (res.status === 401) handleUnauthorized();
   const data = await res.json().catch(() => ({}));
   if (res.ok) return data as T;
   throw new Error(extractDetail(data, `Request failed (${res.status})`));
@@ -62,25 +139,61 @@ async function backendPostOrThrow<T>(path: string, body: unknown): Promise<T> {
 
 async function backendPut<T>(path: string, body: unknown = {}): Promise<T | null> {
   try {
-    const res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
+    let res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        handleUnauthorized();
+      }
+    }
+    if (res.status === 401) handleUnauthorized();
     if (res.ok) return (await res.json()) as T;
-  } catch { /* fallback */ }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Session expired')) throw e;
+    /* fallback */
+  }
   return null;
 }
 
 async function backendPatch<T>(path: string, body: unknown = {}): Promise<T | null> {
   try {
-    const res = await backendFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
+    let res = await backendFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await backendFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
+      } else {
+        handleUnauthorized();
+      }
+    }
+    if (res.status === 401) handleUnauthorized();
     if (res.ok) return (await res.json()) as T;
-  } catch { /* fallback */ }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Session expired')) throw e;
+    /* fallback */
+  }
   return null;
 }
 
 async function backendDelete(path: string): Promise<boolean> {
   try {
-    const res = await backendFetch(path, { method: 'DELETE' });
+    let res = await backendFetch(path, { method: 'DELETE' });
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        res = await backendFetch(path, { method: 'DELETE' });
+      } else {
+        handleUnauthorized();
+      }
+    }
+    if (res.status === 401) handleUnauthorized();
     return res.ok;
-  } catch { /* fallback */ }
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith('Session expired')) throw e;
+    /* fallback */
+  }
   return false;
 }
 
@@ -120,7 +233,7 @@ function adaptLab(raw: Record<string, unknown>): LabInfo {
 function adaptUser(raw: Record<string, unknown>): UserRecord {
   return {
     id: String(raw.id ?? ''),
-    name: String(raw.name ?? raw.email ?? ''),
+    name: String(raw.full_name ?? raw.name ?? raw.email ?? ''),
     role: toAppRole(String(raw.role ?? '')),
     email: String(raw.email ?? ''),
     assignedLab: String(raw.lab_id ?? 'N/A'),
@@ -152,7 +265,7 @@ function adaptMaintenance(raw: Record<string, unknown>): MaintenanceRequest {
     status: statusMap[String(raw.status ?? '').toLowerCase()] ?? 'Pending',
     assignedTo: raw.assigned_to_id ? String(raw.assigned_to_id) : undefined,
     priority: priorityMap[String(raw.priority ?? '').toLowerCase()] ?? 'Medium',
-    issue: String(raw.issue_description ?? ''),
+    issue: String(raw.description ?? raw.issue_description ?? ''),
     history: []
   };
 }
@@ -354,8 +467,17 @@ export const api = {
     else localStorage.removeItem(TOKEN_STORAGE_KEY);
   },
 
+  setRefreshToken(token: string | null) {
+    refreshToken = token;
+    if (token) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  },
+
+  /** Register a callback to be invoked when any request returns 401 (session expired). */
+  onUnauthorized(cb: () => void) { _onUnauthorized = cb; },
+
   // ── Auth ─────────────────────────────────────────────────────────────────
-  async login(email: string, password: string, _selectedRole?: Role): Promise<{ token: string; user: User }> {
+  async login(email: string, password: string, _selectedRole?: Role): Promise<{ token: string; refreshToken: string; user: User }> {
     const res = await backendFetch('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password })
@@ -365,6 +487,7 @@ export const api = {
     const role = toAppRole(data.user?.role ?? '');
     return {
       token: data.access_token,
+      refreshToken: data.refresh_token,
       user: { id: data.user.id, name: data.user.name ?? email, email: data.user.email ?? email, role, labId: data.user.lab_id }
     };
   },
@@ -382,19 +505,43 @@ export const api = {
 
   // ── Analytics ─────────────────────────────────────────────────────────────
   async getAdminKpis() {
-    type Summary = { total_assets: number; active_assets: number; damaged_assets: number; under_maintenance: number; pending_maintenance: number; labs_count: number };
+    type Summary = {
+      total_assets: number; active_assets: number; damaged_assets: number;
+      under_maintenance: number; cancelled_assets: number;
+      pending_maintenance: number; total_users: number; labs_count: number;
+    };
     const data = await backendGet<Summary>('/analytics/summary');
     if (data) {
-      return { totalAssets: data.total_assets, activeAssets: data.active_assets, damagedAssets: data.damaged_assets, maintenanceRequests: data.under_maintenance, pendingRequests: data.pending_maintenance, labs: data.labs_count };
+      return {
+        totalAssets: data.total_assets, activeAssets: data.active_assets,
+        damagedAssets: data.damaged_assets, underMaintenance: data.under_maintenance,
+        cancelledAssets: data.cancelled_assets, pendingRequests: data.pending_maintenance,
+        totalUsers: data.total_users, labs: data.labs_count
+      };
     }
-    return delay(adminKpis);
+    return { totalAssets: 0, activeAssets: 0, damagedAssets: 0, underMaintenance: 0, cancelledAssets: 0, pendingRequests: 0, totalUsers: 0, labs: 0 };
   },
 
   async getLabKpis() { return delay(labKpis); },
   async getServiceKpis() { return delay(serviceKpis); },
 
   async getAnalyticsDashboard() {
-    type Dashboard = { kpis: Record<string, number>; assets_by_location: { label: string; value: number }[]; asset_category_distribution: { label: string; value: number }[]; monthly_procurement_trend: { label: string; value: number }[]; maintenance_frequency?: Record<string, unknown>; financial_status_prediction?: Record<string, unknown> };
+    type ChartPoint = { label: string; value: number };
+    type Dashboard = {
+      asset_kpis: {
+        total_assets: number; active_assets: number; damaged_assets: number;
+        under_maintenance: number; cancelled_assets: number;
+        pending_maintenance: number; total_users: number; labs_count: number;
+      };
+      assets_by_location: ChartPoint[];
+      asset_category_distribution: ChartPoint[];
+      monthly_procurement_trend: ChartPoint[];
+      maintenance_status_distribution: ChartPoint[];
+      feedback_ratings_distribution: ChartPoint[];
+      maintenance_frequency: ChartPoint[];
+      feedback_analysis: ChartPoint[];
+      financial_status_prediction: ChartPoint[];
+    };
     const data = await backendGet<Dashboard>('/analytics/dashboard');
     return data ?? null;
   },
@@ -402,7 +549,7 @@ export const api = {
   async getAssetCategoryChart() {
     const dash = await this.getAnalyticsDashboard();
     if (dash?.asset_category_distribution?.length) return dash.asset_category_distribution;
-    return delay([{ label: 'Computer', value: 62 }, { label: 'Lab Equipment', value: 38 }, { label: 'Network', value: 24 }]);
+    return delay([{ label: 'Computer', value: 62 }, { label: 'Lab Equipment', value: 38 }]);
   },
 
   async getMaintenanceOverviewChart() {
@@ -526,7 +673,7 @@ export const api = {
 
   async raiseMaintenanceRequest(role: Role, payload: { assetId: string; labId: string; issue: string; priority: Priority }): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:raise');
-    const body = { asset_id: payload.assetId, issue_description: payload.issue, priority: payload.priority.toLowerCase() };
+    const body = { asset_id: payload.assetId, description: payload.issue, priority: payload.priority.toLowerCase() };
     const data = await backendPost<Record<string, unknown>>('/maintenance/report', body);
     if (data) return adaptMaintenance(data);
     const asset = assets.find((a) => a.id === payload.assetId && a.labId === payload.labId);
@@ -544,7 +691,7 @@ export const api = {
 
   async assignMaintenanceRequest(role: Role, requestId: string, assignee: string): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:assign');
-    const data = await backendPut<Record<string, unknown>>(`/maintenance/${requestId}/assign`, { staff_id: assignee });
+    const data = await backendPut<Record<string, unknown>>(`/maintenance/${requestId}/assign`, { assigned_to_id: assignee });
     if (data) return adaptMaintenance(data);
     const index = maintenanceRequests.findIndex((r) => r.requestId === requestId || r.id === requestId);
     if (index < 0) throw new Error('Maintenance request not found.');
@@ -560,7 +707,7 @@ export const api = {
   async updateMaintenanceStatus(role: Role, requestId: string, status: MaintenanceStatus, remarks: string): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:update_status');
     const endpoint = status === 'Completed' ? `/maintenance/${requestId}/complete` : `/maintenance/${requestId}/progress`;
-    const body = { remarks, status: status === 'In Progress' ? 'in_progress' : 'completed' };
+    const body = status === 'Completed' ? {} : { notes: remarks };
     const data = await backendPut<Record<string, unknown>>(endpoint, body);
     if (data) return adaptMaintenance(data);
     const index = maintenanceRequests.findIndex((r) => r.requestId === requestId || r.id === requestId);
@@ -606,7 +753,7 @@ export const api = {
 
   async approveProcurementRequest(role: Role, requestId: string): Promise<ProcurementRequest> {
     assertPermission(role, 'procurement:approve');
-    const body = { decision: 'approved', remarks: 'Approved by admin' };
+    const body = { approved: true, notes: 'Approved by admin' };
     const data = await backendPut<Record<string, unknown>>(`/purchase/${requestId}/admin-approve`, body);
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
@@ -617,7 +764,7 @@ export const api = {
 
   async rejectProcurementRequest(role: Role, requestId: string, remarks: string): Promise<ProcurementRequest> {
     assertPermission(role, 'procurement:approve');
-    const body = { decision: 'rejected', remarks };
+    const body = { approved: false, notes: remarks };
     const data = await backendPut<Record<string, unknown>>(`/purchase/${requestId}/admin-approve`, body);
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
@@ -628,7 +775,7 @@ export const api = {
 
   async sendProcurementToVendor(role: Role, requestId: string, vendorName: string): Promise<ProcurementRequest> {
     assertPermission(role, 'procurement:send_to_vendor');
-    const body = { vendor_name: vendorName, expected_delivery: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) };
+    const body = { request_id: requestId, vendor_name: vendorName, expected_delivery_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) };
     const data = await backendPost<Record<string, unknown>>('/purchase/order', body);
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
@@ -675,6 +822,10 @@ export const api = {
   },
 
   async vendorUpdateProcurement(role: Role, requestId: string, decision: Extract<ProcurementStatus, 'Accepted by Vendor' | 'Rejected by Vendor'>): Promise<ProcurementRequest> {
+    if (decision === 'Accepted by Vendor') {
+      const data = await backendPost<Record<string, unknown>>(`/purchase/${requestId}/confirm-payment`, {});
+      if (data) return adaptProcurement(data);
+    }
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
     if (index < 0) throw new Error('Procurement request not found.');
     procurementRequests[index] = { ...procurementRequests[index], status: decision };

@@ -95,6 +95,16 @@ class LoginResponse(BaseModel):
     user: LoginUser
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
 class UserProfile(BaseModel):
     id: str
     email: str
@@ -392,7 +402,42 @@ def login(payload: LoginRequest) -> dict:
 
 
 # ===========================================================================
+# POST /auth/refresh
+# ===========================================================================
+
+@router.post(
+    "/refresh",
+    response_model=RefreshResponse,
+    summary="Refresh access token using a refresh token",
+    description="Exchanges a valid Supabase refresh token for a new access/refresh token pair.",
+)
+def refresh_token(payload: RefreshRequest) -> dict:
+    try:
+        session_resp = anon_client.auth.refresh_session(payload.refresh_token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    if not session_resp or not session_resp.session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not refresh session",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {
+        "access_token": session_resp.session.access_token,
+        "refresh_token": session_resp.session.refresh_token,
+        "token_type": "bearer",
+    }
+
+
+# ===========================================================================
 # GET /auth/me
+# ===========================================================================
 # ===========================================================================
 
 @router.get(

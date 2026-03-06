@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { QrCode, ScanLine, Wrench } from 'lucide-react';
+import { QrCode, ScanLine, Wrench, X } from 'lucide-react';
 import { DataList, DataTable, type ListItem, type TableColumn } from '../../components/tables';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import type { Asset, MaintenanceRequest, Priority } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+
+const PRIORITIES: Priority[] = ['Low', 'Medium', 'High'];
 
 export function LabMaintenancePage() {
   const { user } = useAuth();
@@ -13,9 +15,20 @@ export function LabMaintenancePage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [statusMessage, setStatusMessage] = useState('');
 
+  // Report Issue modal
+  const [showModal, setShowModal] = useState(false);
+  const [modalAssetId, setModalAssetId] = useState('');
+  const [modalIssue, setModalIssue] = useState('');
+  const [modalPriority, setModalPriority] = useState<Priority>('Medium');
+  const [modalError, setModalError] = useState('');
+  const [modalSaving, setModalSaving] = useState(false);
+
   async function loadData() {
     if (!user?.labId) return;
-    const [assetRows, maintenanceRows] = await Promise.all([api.getAssets('lab', user.labId), api.getMaintenanceRequests('lab', user.labId)]);
+    const [assetRows, maintenanceRows] = await Promise.all([
+      api.getAssets('lab', user.labId),
+      api.getMaintenanceRequests('lab', user.labId)
+    ]);
     setAssets(assetRows);
     setRequests(maintenanceRows);
   }
@@ -23,6 +36,46 @@ export function LabMaintenancePage() {
   useEffect(() => {
     loadData();
   }, [user?.labId]);
+
+  function openModal() {
+    setModalAssetId(assets[0]?.id ?? '');
+    setModalIssue('');
+    setModalPriority('Medium');
+    setModalError('');
+    setShowModal(true);
+  }
+
+  async function handleSubmitReport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!modalIssue.trim()) { setModalError(t('issueRequired', 'Please describe the issue.')); return; }
+    if (!modalAssetId) { setModalError(t('assetRequired', 'Please select an asset.')); return; }
+    if (!user?.labId) return;
+    setModalError('');
+    setModalSaving(true);
+    try {
+      await api.raiseMaintenanceRequest('lab', {
+        assetId: modalAssetId,
+        labId: user.labId,
+        issue: modalIssue.trim(),
+        priority: modalPriority
+      });
+      setShowModal(false);
+      setStatusMessage(t('maintenanceRequestCreated', 'Maintenance request submitted.'));
+      await loadData();
+    } catch (err: unknown) {
+      setModalError(err instanceof Error ? err.message : t('requestFailed', 'Failed to submit request.'));
+    } finally {
+      setModalSaving(false);
+    }
+  }
+
+  async function handleQRScan() {
+    if (!user?.labId || assets.length === 0) {
+      setStatusMessage(t('noLabAssetsForRequest', 'No lab assets available to raise a request.'));
+      return;
+    }
+    openModal();
+  }
 
   const historyItems: ListItem[] = useMemo(
     () =>
@@ -50,22 +103,6 @@ export function LabMaintenancePage() {
     [t]
   );
 
-  async function raiseRequest(issue: string) {
-    if (!user?.labId || assets.length === 0) {
-      setStatusMessage(t('noLabAssetsForRequest', 'No lab assets available to raise a request.'));
-      return;
-    }
-    const targetAsset = assets[0];
-    await api.raiseMaintenanceRequest('lab', {
-      assetId: targetAsset.id,
-      labId: user.labId,
-      issue,
-      priority: 'Medium' as Priority
-    });
-    await loadData();
-    setStatusMessage(t('maintenanceRequestCreated', 'Maintenance request created.'));
-  }
-
   return (
     <div className="dashboard-grid">
       <div className="page-intro page-intro-row">
@@ -76,7 +113,8 @@ export function LabMaintenancePage() {
         <button
           className="btn primary-btn page-action-primary"
           type="button"
-          onClick={() => raiseRequest('System reported by quick scan')}
+          onClick={openModal}
+          disabled={assets.length === 0}
         >
           <Wrench size={15} /> {t('reportIssue', 'Report Issue')}
         </button>
@@ -92,15 +130,85 @@ export function LabMaintenancePage() {
           </div>
           <h4>{t('scanAssetQr', 'Scan Asset QR Code')}</h4>
           <p>{t('qrDesc', "Point your device camera at the asset's QR code to quickly log a maintenance issue.")}</p>
-          <button className="btn secondary-btn scanner-btn" type="button" onClick={() => raiseRequest('Issue captured using QR quick scan')}>
+          <button className="btn secondary-btn scanner-btn" type="button" onClick={handleQRScan}>
             <ScanLine size={14} /> {t('openScanner', 'Open Scanner')}
           </button>
         </div>
       </section>
+
       {statusMessage ? <p className="settings-status">{statusMessage}</p> : null}
 
       <DataTable data={requests} columns={columns} title={t('maintenanceLog', 'Maintenance Log')} subtitle={t('maintenanceLogDesc', 'Lab request history and current statuses')} />
       <DataList items={historyItems} title={t('maintenanceHistory', 'Maintenance History')} subtitle={t('maintenanceHistoryDesc', 'Status timeline for all requests')} />
+
+      {/* ── Report Issue Modal ─────────────────────────────── */}
+      {showModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{t('reportIssueTitle', 'Report Maintenance Issue')}</h3>
+              <button className="modal-close-btn" type="button" onClick={() => setShowModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitReport} className="modal-form">
+              <label className="form-label">
+                {t('selectAsset', 'Asset')} *
+                <select
+                  className="input"
+                  value={modalAssetId}
+                  onChange={(e) => setModalAssetId(e.target.value)}
+                  required
+                >
+                  <option value="">{t('selectAssetPlaceholder', '— Select asset —')}</option>
+                  {assets.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} {a.assetCode ? `(${a.assetCode})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="form-label">
+                {t('issueDescription', 'Issue Description')} *
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={modalIssue}
+                  onChange={(e) => setModalIssue(e.target.value)}
+                  placeholder={t('describeIssue', 'Describe the problem in detail…')}
+                  required
+                />
+              </label>
+
+              <label className="form-label">
+                {t('priority', 'Priority')}
+                <select
+                  className="input"
+                  value={modalPriority}
+                  onChange={(e) => setModalPriority(e.target.value as Priority)}
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+
+              {modalError && <p className="form-error">{modalError}</p>}
+
+              <div className="modal-actions">
+                <button type="button" className="btn secondary-btn" onClick={() => setShowModal(false)}>
+                  {t('cancel', 'Cancel')}
+                </button>
+                <button type="submit" className="btn primary-btn" disabled={modalSaving}>
+                  {modalSaving ? t('submitting', 'Submitting…') : t('submitRequest', 'Submit Request')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

@@ -20,15 +20,16 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 function loadStoredAuthState(): AuthState {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return { token: null, user: null };
+  if (!raw) return { token: null, refreshToken: null, user: null };
   try {
     const parsed = JSON.parse(raw) as AuthState;
     return {
       token: parsed.token ?? null,
+      refreshToken: parsed.refreshToken ?? null,
       user: parsed.user ?? null
     };
   } catch {
-    return { token: null, user: null };
+    return { token: null, refreshToken: null, user: null };
   }
 }
 
@@ -37,26 +38,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
 
   useEffect(() => {
-    if (state.token) {
-      api.setToken(state.token);
-    }
+    if (state.token) api.setToken(state.token);
+    if (state.refreshToken) api.setRefreshToken(state.refreshToken);
     setIsBootstrapping(false);
-  }, [state.token]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
-  const login = async (email: string, password: string, selectedRole?: Role) => {
-    const { token, user } = await api.login(email, password, selectedRole);
-    api.setToken(token);
-    setState({ token, user });
-    return user;
-  };
-
   const logout = () => {
     api.setToken(null);
-    setState({ token: null, user: null });
+    api.setRefreshToken(null);
+    setState({ token: null, refreshToken: null, user: null });
+  };
+
+  // Auto-logout whenever any API call returns 401 and token refresh also fails
+  useEffect(() => {
+    api.onUnauthorized(logout);
+  }, []);
+
+  const login = async (email: string, password: string, selectedRole?: Role) => {
+    const { token, refreshToken: rToken, user } = await api.login(email, password, selectedRole);
+    api.setToken(token);
+    api.setRefreshToken(rToken);
+    setState({ token, refreshToken: rToken, user });
+    return user;
   };
 
   const value = useMemo<AuthContextType>(

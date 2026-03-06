@@ -20,19 +20,20 @@ _require_admin_or_tech = require_role("admin", "lab_technician")
 class LabOut(BaseModel):
     id: str
     lab_name: str
-    department: str
-    location: str
+    department: Optional[str] = None
+    department_id: Optional[str] = None
+    location: Optional[str] = None
 
 
 class LabCreate(BaseModel):
     lab_name: str
-    department: str
-    location: str
+    department_id: Optional[str] = None
+    location: Optional[str] = None
 
 
 class LabUpdate(BaseModel):
     lab_name: Optional[str] = None
-    department: Optional[str] = None
+    department_id: Optional[str] = None
     location: Optional[str] = None
 
 
@@ -46,11 +47,15 @@ def list_labs(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_admin_or_tech),
 ):
-    q = sb.table("labs").select("id, lab_name, department, location")
+    q = sb.table("labs").select("id, lab_name, department_id, location, departments(department_name)")
     if current_user["role"] == "lab_technician":
         q = q.eq("technician_id", current_user["id"])
     result = q.execute()
-    return result.data or []
+    rows = []
+    for row in (result.data or []):
+        dept = row.pop("departments", None) or {}
+        rows.append({**row, "department": dept.get("department_name", "")})
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +67,15 @@ def create_lab(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    result = sb.table("labs").insert(payload.model_dump()).execute()
+    result = sb.table("labs").insert(payload.model_dump(exclude_none=True)).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create lab")
-    return result.data[0]
+    row = result.data[0]
+    dept_name = ""
+    if row.get("department_id"):
+        dr = sb.table("departments").select("department_name").eq("id", row["department_id"]).limit(1).execute()
+        dept_name = dr.data[0]["department_name"] if dr.data else ""
+    return {**row, "department": dept_name}
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +95,12 @@ def update_lab(
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lab not found")
     result = sb.table("labs").update(update_data).eq("id", lab_id).execute()
-    return result.data[0]
+    row = result.data[0]
+    dept_name = ""
+    if row.get("department_id"):
+        dr = sb.table("departments").select("department_name").eq("id", row["department_id"]).limit(1).execute()
+        dept_name = dr.data[0]["department_name"] if dr.data else ""
+    return {**row, "department": dept_name}
 
 
 # ---------------------------------------------------------------------------

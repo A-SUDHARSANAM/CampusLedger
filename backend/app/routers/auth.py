@@ -1,3 +1,9 @@
+# NOTE: This file is NOT registered in main.py and is DEAD CODE.
+# The active auth router is app/routers/auth_routes.py (auth_routes_router).
+# This file references the legacy `profiles` table via app.core.dependencies
+# and has duplicate /auth/login and /auth/refresh endpoints that conflict
+# with auth_routes.py. Do NOT import or register this router.
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
