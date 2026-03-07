@@ -237,6 +237,7 @@ function adaptUser(raw: Record<string, unknown>): UserRecord {
     role: toAppRole(String(raw.role ?? '')),
     email: String(raw.email ?? ''),
     assignedLab: String(raw.lab_id ?? 'N/A'),
+    department: raw.department_name ? String(raw.department_name) : undefined,
     is_approved: Boolean(raw.is_approved),
     status: (raw.status as 'pending' | 'approved' | 'suspended') ?? 'pending'
   };
@@ -266,6 +267,7 @@ function adaptMaintenance(raw: Record<string, unknown>): MaintenanceRequest {
     assignedTo: raw.assigned_to_id ? String(raw.assigned_to_id) : undefined,
     priority: priorityMap[String(raw.priority ?? '').toLowerCase()] ?? 'Medium',
     issue: String(raw.description ?? raw.issue_description ?? ''),
+    createdAt: raw.created_at ? String(raw.created_at).slice(0, 10) : undefined,
     history: []
   };
 }
@@ -652,6 +654,12 @@ export const api = {
     const data = await backendGet<Record<string, unknown>[]>('/users');
     if (data) return data.map(adaptUser);
     return delay([...users]);
+  },
+
+  async getServiceStaff(): Promise<UserRecord[]> {
+    const data = await backendGet<Record<string, unknown>[]>('/users?role=service_staff');
+    if (data) return data.map(adaptUser);
+    return delay(users.filter((u) => u.role === 'service'));
   },
 
   async approveUser(userId: string): Promise<void> {

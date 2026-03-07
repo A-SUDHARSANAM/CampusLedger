@@ -25,6 +25,7 @@ class UserOut(BaseModel):
     role: Optional[str] = None          # resolved via JOIN with roles table
     status: str = "pending"             # 'active' | 'pending'
     department_id: Optional[str] = None
+    department_name: Optional[str] = None   # resolved via JOIN with departments
     created_at: Optional[str] = None
     # Derived fields kept for frontend compatibility
     is_approved: Optional[bool] = None
@@ -49,6 +50,8 @@ def _enrich_user(row: dict) -> dict:
     row = dict(row)
     roles_obj = row.pop("roles", None) or {}
     row["role"] = roles_obj.get("role_name", row.get("role", ""))
+    depts_obj = row.pop("departments", None) or {}
+    row["department_name"] = depts_obj.get("department_name") or row.get("department_name")
     is_active = row.get("status") == "active"
     row["is_active"] = is_active
     row["is_approved"] = is_active
@@ -77,7 +80,7 @@ def list_users(
 
     q = (
         sb.table("users")
-        .select("*, roles(role_name)")
+        .select("*, roles(role_name), departments(department_name)")
         .range(skip, skip + limit - 1)
         .order("created_at", desc=True)
     )
@@ -114,7 +117,7 @@ def get_user(
 ):
     result = (
         sb.table("users")
-        .select("*, roles(role_name)")
+        .select("*, roles(role_name), departments(department_name)")
         .eq("id", user_id)
         .maybe_single()
         .execute()

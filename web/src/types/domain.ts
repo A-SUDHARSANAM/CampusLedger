@@ -43,6 +43,7 @@ export type UserRecord = {
   role: Role;
   email: string;
   assignedLab: string;
+  department?: string;
   is_approved?: boolean;
   status?: 'pending' | 'approved' | 'suspended';
 };
@@ -64,9 +65,11 @@ export type MaintenanceRequest = {
   labId: string;
   labName: string;
   status: MaintenanceStatus;
-  assignedTo?: string;
+  assignedTo?: string;      // UUID of assigned service_staff user
+  assignedToName?: string;  // resolved display name
   priority: Priority;
   issue: string;
+  createdAt?: string;
   history: MaintenanceHistoryEntry[];
 };
 

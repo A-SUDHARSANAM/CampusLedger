@@ -123,13 +123,37 @@ def notify_staff_assigned(
 ) -> None:
     """
     Triggered when admin assigns service staff to a maintenance request.
-    Notifies the assigned staff member.
+    Notifies the assigned staff member with full task details.
     """
+    # Fetch request details to build a rich notification message
+    task_detail = ""
+    try:
+        req = (
+            sb.table("maintenance_requests")
+            .select("issue_description, priority, assets(asset_name, labs(lab_name))")
+            .eq("id", request_id)
+            .maybe_single()
+            .execute()
+        )
+        if req.data:
+            issue    = req.data.get("issue_description", "N/A")
+            priority = (req.data.get("priority") or "medium").upper()
+            asset    = (req.data.get("assets") or {}).get("asset_name", "N/A")
+            lab      = ((req.data.get("assets") or {}).get("labs") or {}).get("lab_name", "N/A")
+            task_detail = (
+                f" Asset: {asset} | Lab: {lab} | Priority: {priority} | Issue: {issue}"
+            )
+    except Exception as exc:
+        logger.warning("Could not fetch task details for notification: %s", exc)
+
     notify(
         sb,
         user_id    = assigned_to_id,
-        title      = "Maintenance Task Assigned",
-        message    = f"You have been assigned to maintenance request #{request_id[:8]}. Please review and begin work.",
+        title      = "New Maintenance Task Assigned",
+        message    = (
+            f"Admin has assigned you to maintenance request #{request_id[:8]}."
+            f"{task_detail} Please review and begin work promptly."
+        ),
         notif_type = "maintenance",
     )
 
