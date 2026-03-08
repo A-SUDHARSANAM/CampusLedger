@@ -9,7 +9,9 @@ import {
   ClipboardList,
   Settings,
   ShoppingCart,
-  Receipt
+  Receipt,
+  Brain,
+  Cpu
 } from 'lucide-react';
 import type { Role } from '../types/auth';
 
@@ -36,6 +38,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'Users', to: '/admin/users', icon: Users, group: 'main' },
     { label: 'Maintenance', to: '/admin/maintenance', icon: Wrench, group: 'main' },
     { label: 'Reports', to: '/admin/reports', icon: FileText, group: 'main' },
+    { label: 'Inventory Intelligence', to: '/admin/inventory-intelligence', icon: Brain, group: 'main' },
     { label: 'Settings', to: '/admin/settings', icon: Settings, group: 'system' }
   ],
   lab: [
@@ -52,6 +55,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
   ],
   purchase_dept: [
     { label: 'Purchase Orders', to: '/purchase/dashboard', icon: Receipt, group: 'main' },
+    { label: 'Smart Procurement', to: '/purchase/smart-procurement', icon: Cpu, group: 'main' },
     { label: 'Settings', to: '/purchase/settings', icon: Settings, group: 'system' }
   ]
 };

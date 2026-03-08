@@ -21,6 +21,8 @@ import { LabProcurementPage } from './pages/lab/LabProcurementPage';
 import { ServiceDashboardPage } from './pages/service/ServiceDashboardPage';
 import { ServiceTasksPage } from './pages/service/ServiceTasksPage';
 import { PurchaseDashboardPage } from './pages/purchase/PurchaseDashboardPage';
+import { PurchaseSmartProcurementPage } from './pages/purchase/PurchaseSmartProcurementPage';
+import { AdminInventoryIntelligencePage } from './pages/admin/AdminInventoryIntelligencePage';
 import { LanguageProvider } from './context/LanguageContext';
 
 function App() {
@@ -42,6 +44,7 @@ function App() {
               <Route path="users" element={<AdminUsersPage />} />
               <Route path="maintenance" element={<AdminMaintenancePage />} />
               <Route path="reports" element={<AdminReportsPage />} />
+              <Route path="inventory-intelligence" element={<AdminInventoryIntelligencePage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 
@@ -61,6 +64,7 @@ function App() {
 
             <Route path="/purchase" element={<ProtectedRoute allowedRoles={['purchase_dept']}><DashboardLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<PurchaseDashboardPage />} />
+              <Route path="smart-procurement" element={<PurchaseSmartProcurementPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Route>

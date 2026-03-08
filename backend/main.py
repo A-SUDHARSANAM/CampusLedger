@@ -20,6 +20,7 @@ from app.routers import (
     qr_router,
     student_queries_router,
     technician_router,
+    inventory_predictions_router,
 )
 
 API_PREFIX = "/api/v1"
@@ -27,7 +28,7 @@ API_PREFIX = "/api/v1"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: verify Supabase connectivity. Shutdown: no-op."""
+    """Startup: verify Supabase connectivity + start monthly ML retrain scheduler."""
     from app.db.supabase import supabase_admin
 
     try:
@@ -36,6 +37,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover
         import logging
         logging.getLogger("campusledger").warning("Supabase connectivity check failed: %s", exc)
+
+    # Start background scheduler for monthly model retraining (non-blocking)
+    try:
+        from ml.retrain_model import start_background_scheduler
+        start_background_scheduler()
+    except Exception as exc:
+        import logging
+        logging.getLogger("campusledger").warning("ML scheduler startup failed (non-fatal): %s", exc)
+
     yield
 
 
@@ -78,6 +88,7 @@ app.include_router(notifications_router, prefix=API_PREFIX)
 app.include_router(reports_router,       prefix=API_PREFIX)
 app.include_router(borrow_router,           prefix=API_PREFIX)
 app.include_router(qr_router,               prefix=API_PREFIX)
+app.include_router(inventory_predictions_router, prefix=API_PREFIX)
 app.include_router(student_queries_router,  prefix=API_PREFIX)
 app.include_router(technician_router,        prefix=API_PREFIX)
 

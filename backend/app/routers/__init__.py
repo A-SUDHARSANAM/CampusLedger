@@ -12,6 +12,7 @@ from app.routers.borrow import router as borrow_router
 from app.routers.qr import router as qr_router
 from app.routers.student_queries import router as student_queries_router
 from app.routers.technician import router as technician_router
+from app.routers.inventory_predictions import router as inventory_predictions_router
 
 __all__ = [
     "auth_routes_router",
@@ -28,4 +29,5 @@ __all__ = [
     "qr_router",
     "student_queries_router",
     "technician_router",
+    "inventory_predictions_router",
 ]

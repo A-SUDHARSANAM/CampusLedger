@@ -231,8 +231,28 @@ def create_asset(
         if cat_id:
             insert_data["category_id"] = cat_id
 
+    def _do_insert(data: dict):
+        try:
+            return sb.table("assets").insert(data).execute()
+        except Exception as exc:
+            err = str(exc)
+            # PGRST204 = PostgREST can't find a column in its schema cache.
+            # This happens when migration 004 hasn't been applied yet and
+            # the assets table is missing the location_id column.
+            # Identify the offending column name from the error message and
+            # retry without it so the rest of the insert succeeds.
+            if "PGRST204" in err or "schema cache" in err.lower():
+                import re
+                match = re.search(r"'(\w+)' column of '(\w+)'", err)
+                bad_col = match.group(1) if match else None
+                if bad_col and bad_col in data:
+                    return sb.table("assets").insert(
+                        {k: v for k, v in data.items() if k != bad_col}
+                    ).execute()
+            raise
+
     try:
-        result = sb.table("assets").insert(insert_data).execute()
+        result = _do_insert(insert_data)
     except Exception as exc:
         err_msg = str(exc)
         if "foreign key" in err_msg.lower() or "violates" in err_msg.lower():
@@ -316,7 +336,23 @@ def update_asset(
     if not update_data:
         return existing.data[0]
 
-    result = sb.table("assets").update(update_data).eq("id", asset_id).execute()
+    try:
+        result = sb.table("assets").update(update_data).eq("id", asset_id).execute()
+    except Exception as exc:
+        err = str(exc)
+        if "PGRST204" in err or "schema cache" in err.lower():
+            import re
+            match = re.search(r"'(\w+)' column of '(\w+)'", err)
+            bad_col = match.group(1) if match else None
+            if bad_col and bad_col in update_data:
+                update_data.pop(bad_col)
+                if not update_data:
+                    return existing.data[0]
+                result = sb.table("assets").update(update_data).eq("id", asset_id).execute()
+            else:
+                raise HTTPException(status_code=500, detail=f"Database error: {err[:200]}") from exc
+        else:
+            raise HTTPException(status_code=500, detail=f"Database error: {err[:200]}") from exc
     asset = result.data[0]
     lab_map = {}
     if asset.get("lab_id"):

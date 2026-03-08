@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, BarChart2, Box, CheckCircle2, RefreshCw,
+  AlertTriangle, BarChart2, Box, Brain, CheckCircle2, RefreshCw,
   TrendingUp, Users, Wrench, XCircle
 } from 'lucide-react';
 import { api } from '../../services/api';
@@ -34,6 +35,16 @@ type LocationAnalytics = {
   byType: ChartPoint[];
   byFacility: ChartPoint[];
   maintenanceByLocation: ChartPoint[];
+};
+
+type MlPreviewItem = {
+  id: string;
+  name: string;
+  current_stock: number;
+  predicted_demand: number;
+  reorder_level: number;
+  risk: 'safe' | 'low' | 'reorder';
+  suggested_order: number;
 };
 
 /* ───────────────────────────────────────────
@@ -344,6 +355,7 @@ export function AdminDashboardPage() {
   const [kpis, setKpis] = useState<AdminKpis | null>(null);
   const [dash, setDash] = useState<DashData | null>(null);
   const [locationAnalytics, setLocationAnalytics] = useState<LocationAnalytics | null>(null);
+  const [mlPreview, setMlPreview] = useState<MlPreviewItem[]>([]);
   const [animate, setAnimate] = useState(false);
   const [runningChecks, setRunningChecks] = useState(false);
   const [checksMsg, setChecksMsg] = useState('');
@@ -378,6 +390,29 @@ export function AdminDashboardPage() {
         });
       }
       if (locData) setLocationAnalytics(locData);
+      // Load top-3 ML predictions for dashboard teaser (fire-and-forget)
+      api.getInventoryItems().then(async (items) => {
+        if (!items.length) return;
+        const nextMonth = new Date().getMonth() + 2;
+        const slice = items.slice(0, 5);
+        const results: MlPreviewItem[] = [];
+        for (const item of slice) {
+          const pred = await api.predictDemand(nextMonth, item.id, item.current_stock);
+          if (pred) {
+            const risk: MlPreviewItem['risk'] =
+              item.current_stock >= pred.reorder_level ? 'safe'
+              : item.current_stock >= pred.reorder_level * 0.5 ? 'low'
+              : 'reorder';
+            results.push({
+              ...item,
+              ...pred,
+              risk,
+              suggested_order: Math.max(0, pred.predicted_demand - item.current_stock),
+            });
+          }
+        }
+        setMlPreview(results.slice(0, 3));
+      }).catch(() => { /* preview is non-critical */ });
     } finally {
       setLoading(false);
     }
@@ -564,6 +599,83 @@ export function AdminDashboardPage() {
           labelRotate
         />
       </ChartCard>
+
+      {/* ── Row 5: Inventory Intelligence (ML) Preview ── */}
+      <div
+        className={`page-intro entry-animate ${animate ? 'in' : ''}`}
+        style={{ '--delay': '880ms', marginTop: 8 } as React.CSSProperties}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Brain size={20} style={{ color: '#4F6EF7' }} />
+            <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{t('inventoryIntelligencePreview', 'Inventory Intelligence (ML)')}</h3>
+          </div>
+          <Link
+            to="/admin/inventory-intelligence"
+            style={{ fontSize: '0.83rem', color: '#4F6EF7', textDecoration: 'none', fontWeight: 600 }}
+          >
+            {t('viewAll', 'View All →')}
+          </Link>
+        </div>
+        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', opacity: 0.65 }}>
+          {t('inventoryIntelligencePreviewDesc', 'Top items by ML demand prediction — reorder alerts for coming month')}
+        </p>
+      </div>
+
+      {mlPreview.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 }}>
+          {mlPreview.map((item, i) => {
+            const borderColor =
+              item.risk === 'safe' ? '#22C55E' : item.risk === 'low' ? '#F59E0B' : '#EF4444';
+            const riskLabel =
+              item.risk === 'safe' ? '✓ Safe' : item.risk === 'low' ? '⚠ Low Stock' : '✗ Reorder';
+            const riskColor = borderColor;
+            return (
+              <article
+                key={item.id}
+                className={`card touch-card entry-animate ${animate ? 'in' : ''}`}
+                style={{
+                  '--delay': `${920 + i * 60}ms`,
+                  borderLeft: `4px solid ${borderColor}`,
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                } as React.CSSProperties}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '0.93rem' }}>{item.name}</p>
+                  <span style={{ color: riskColor, fontWeight: 600, fontSize: '0.8rem' }}>{riskLabel}</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.82rem' }}>
+                  <div>
+                    <span style={{ opacity: 0.6 }}>Current Stock</span>
+                    <p style={{ margin: 0, fontWeight: 600 }}>{item.current_stock}</p>
+                  </div>
+                  <div>
+                    <span style={{ opacity: 0.6 }}>Predicted Demand</span>
+                    <p style={{ margin: 0, fontWeight: 600, color: '#4F6EF7' }}>{item.predicted_demand}</p>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div
+          className={`card entry-animate ${animate ? 'in' : ''}`}
+          style={{ '--delay': '920ms', padding: '18px 20px', opacity: 0.55, display: 'flex', alignItems: 'center', gap: 10 } as React.CSSProperties}
+        >
+          <Brain size={18} />
+          <span style={{ fontSize: '0.88rem' }}>
+            {t('mlPreviewLoading', 'ML predictions loading… visit ')}{' '}
+            <Link to="/admin/inventory-intelligence" style={{ color: '#4F6EF7' }}>
+              {t('inventoryIntelligence', 'Inventory Intelligence')}
+            </Link>{' '}
+            {t('forFullReport', 'for the full report.')}
+          </span>
+        </div>
+      )}
 
     </div>
   );

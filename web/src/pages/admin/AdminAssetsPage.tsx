@@ -64,8 +64,10 @@ export function AdminAssetsPage() {
     setForm({ ...EMPTY_FORM });
     setFormError(null);
     setShowModal(true);
-    // Reload categories each time the modal opens so they're always fresh
+    // Reload all dropdown data fresh every time the modal opens
     api.getAssetCategories().then(setCategoryList).catch(() => {});
+    api.getLocations().then(setLocationsList).catch(() => {});
+    api.getLabs('admin').then(setLabList).catch(() => {});
   }
 
   function closeModal() {
@@ -322,14 +324,26 @@ export function AdminAssetsPage() {
 
                 <div className="form-field">
                   <label>Location <span style={{ fontSize: 11, opacity: 0.6 }}>(Academic / Non-Academic)</span></label>
-                  <select className="select" value={form.locationId} onChange={(e) => setField('locationId', e.target.value)}>
+                  <select
+                    className="select"
+                    value={form.locationId}
+                    onChange={(e) => {
+                      setField('locationId', e.target.value);
+                      // Auto-link lab: if this location has a dedicated lab, pre-select it
+                      const loc = locationsList.find((l) => l.id === e.target.value);
+                      if (loc?.lab_id) setField('labId', loc.lab_id);
+                      else setField('labId', '');
+                    }}
+                  >
                     <option value="">— Select Location —</option>
-                    {['academic', 'non_academic'].map((type) => {
+                    {(['academic', 'non_academic'] as const).map((type) => {
                       const group = locationsList.filter((l) => l.type === type);
                       if (!group.length) return null;
                       return (
-                        <optgroup key={type} label={type === 'academic' ? 'Academic' : 'Non-Academic'}>
-                          {group.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                        <optgroup key={type} label={type === 'academic' ? '📚 Academic' : '🏢 Non-Academic'}>
+                          {group.map((loc) => (
+                            <option key={loc.id} value={loc.id}>{loc.name}</option>
+                          ))}
                         </optgroup>
                       );
                     })}
@@ -337,10 +351,40 @@ export function AdminAssetsPage() {
                 </div>
 
                 <div className="form-field">
-                  <label>Lab <span style={{ fontSize: 11, opacity: 0.6 }}>(optional legacy)</span></label>
-                  <select className="select" value={form.labId} onChange={(e) => setField('labId', e.target.value)}>
+                  <label>
+                    Lab
+                    {(() => {
+                      // When a location is selected, show how many labs are linked
+                      const selectedLoc = locationsList.find((l) => l.id === form.locationId);
+                      const labsForLoc = selectedLoc?.lab_id
+                        ? labList.filter((lb) => lb.id === selectedLoc.lab_id)
+                        : labList;
+                      return (
+                        <span style={{ fontSize: 11, opacity: 0.55, marginLeft: 6 }}>
+                          {selectedLoc
+                            ? `${labsForLoc.length} available for this location`
+                            : `${labList.length} labs total`}
+                        </span>
+                      );
+                    })()}
+                  </label>
+                  <select
+                    className="select"
+                    value={form.labId}
+                    onChange={(e) => setField('labId', e.target.value)}
+                  >
                     <option value="">— Select Lab —</option>
-                    {labList.map((lab) => <option key={lab.id} value={lab.id}>{lab.name} {lab.department ? `(${lab.department})` : ''}</option>)}
+                    {(() => {
+                      const selectedLoc = locationsList.find((l) => l.id === form.locationId);
+                      const labsToShow = selectedLoc?.lab_id
+                        ? labList.filter((lb) => lb.id === selectedLoc.lab_id)
+                        : labList;
+                      return labsToShow.map((lab) => (
+                        <option key={lab.id} value={lab.id}>
+                          {lab.name}{lab.department ? ` (${lab.department})` : ''}
+                        </option>
+                      ));
+                    })()}
                   </select>
                 </div>
 
