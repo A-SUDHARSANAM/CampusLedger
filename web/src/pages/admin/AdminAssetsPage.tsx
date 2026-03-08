@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Download, Plus, Search, X } from 'lucide-react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
-import type { Asset } from '../../types/domain';
+import type { Asset, LocationInfo } from '../../types/domain';
 import type { LabInfo } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -17,6 +17,7 @@ const EMPTY_FORM = {
   assetCode: '',
   category: '',
   labId: '',
+  locationId: '',
   status: 'Active' as Asset['status'],
   warranty: '',
   purchaseDate: ''
@@ -32,10 +33,13 @@ export function AdminAssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [labList, setLabList] = useState<LabInfo[]>([]);
   const [categoryList, setCategoryList] = useState<{ id: string; category_name: string }[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<{ id: string; name: string }[]>([]);
+  const [locationsList, setLocationsList] = useState<LocationInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [status, setStatus] = useState('all');
+  const [department, setDepartment] = useState('all');
 
   // Add-asset modal
   const [showModal, setShowModal] = useState(false);
@@ -52,6 +56,8 @@ export function AdminAssetsPage() {
     loadAssets().catch((err: Error) => setError(err.message));
     api.getLabs('admin').then(setLabList).catch(() => {});
     api.getAssetCategories().then(setCategoryList).catch(() => {});
+    api.getDepartments().then(setDepartmentsList).catch(() => {});
+    api.getLocations().then(setLocationsList).catch(() => {});
   }, []);
 
   function openAddModal() {
@@ -85,6 +91,7 @@ export function AdminAssetsPage() {
         category: form.category.trim(),
         location: lab?.name ?? '',
         labId: form.labId || '',
+        locationId: form.locationId || undefined,
         status: form.status,
         warranty: form.warranty,
         purchaseDate: form.purchaseDate || undefined
@@ -98,6 +105,12 @@ export function AdminAssetsPage() {
     }
   }
 
+  // Build a quick labId → department lookup for filtering
+  const labDeptMap = useMemo(
+    () => Object.fromEntries(labList.map((l) => [l.id, l.department])),
+    [labList]
+  );
+
   const filteredAssets = useMemo(
     () =>
       assets.filter((asset) => {
@@ -107,9 +120,11 @@ export function AdminAssetsPage() {
           (asset.assetCode && asset.assetCode.toLowerCase().includes(query.toLowerCase()));
         const passCategory = category === 'all' || asset.category === category;
         const passStatus = status === 'all' || asset.status === status;
-        return passQuery && passCategory && passStatus;
+        const passDepartment =
+          department === 'all' || labDeptMap[asset.labId] === department;
+        return passQuery && passCategory && passStatus && passDepartment;
       }),
-    [assets, category, query, status]
+    [assets, category, query, status, department, labDeptMap]
   );
 
   const columns: TableColumn<Asset>[] = useMemo(
@@ -242,6 +257,12 @@ export function AdminAssetsPage() {
           <option value="Damaged">Damaged</option>
           <option value="Under Maintenance">Under Maintenance</option>
         </select>
+        <select className="select slim-select" value={department} onChange={(e) => setDepartment(e.target.value)}>
+          <option value="all">{t('allDepartments', 'All Departments')}</option>
+          {departmentsList.map((d) => (
+            <option key={d.id} value={d.name}>{d.name}</option>
+          ))}
+        </select>
       </section>
 
       {error ? (
@@ -300,7 +321,23 @@ export function AdminAssetsPage() {
                 </div>
 
                 <div className="form-field">
-                  <label>Location / Lab</label>
+                  <label>Location <span style={{ fontSize: 11, opacity: 0.6 }}>(Academic / Non-Academic)</span></label>
+                  <select className="select" value={form.locationId} onChange={(e) => setField('locationId', e.target.value)}>
+                    <option value="">— Select Location —</option>
+                    {['academic', 'non_academic'].map((type) => {
+                      const group = locationsList.filter((l) => l.type === type);
+                      if (!group.length) return null;
+                      return (
+                        <optgroup key={type} label={type === 'academic' ? 'Academic' : 'Non-Academic'}>
+                          {group.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div className="form-field">
+                  <label>Lab <span style={{ fontSize: 11, opacity: 0.6 }}>(optional legacy)</span></label>
                   <select className="select" value={form.labId} onChange={(e) => setField('labId', e.target.value)}>
                     <option value="">— Select Lab —</option>
                     {labList.map((lab) => <option key={lab.id} value={lab.id}>{lab.name} {lab.department ? `(${lab.department})` : ''}</option>)}

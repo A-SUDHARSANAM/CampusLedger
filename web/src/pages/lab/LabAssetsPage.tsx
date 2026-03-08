@@ -21,9 +21,11 @@ export function LabAssetsPage() {
   const [statusMessage, setStatusMessage] = useState('');
 
   async function loadData() {
-    if (!user?.labId) return;
-    const [catalogRows, borrowRows] = await Promise.all([api.getElectronicsCatalog(), api.getBorrowRecords('lab', user.labId)]);
+    // Catalog loads for all lab techs regardless of labId assignment
+    const catalogRows = await api.getElectronicsCatalog(user?.labId || undefined);
     setCatalog(catalogRows);
+    // Borrow records load only when a labId is known (or backend filters by user)
+    const borrowRows = await api.getBorrowRecords('lab', user?.labId || undefined);
     setBorrowRecords(borrowRows);
   }
 
@@ -53,32 +55,42 @@ export function LabAssetsPage() {
   }
 
   async function submitBorrowRequest() {
-    if (!user?.labId) return;
     if (!studentName.trim() || !projectName.trim() || !dueDate || cart.length === 0) {
       setStatusMessage(t('enterStudentDetails', 'Enter student details, due date, and at least one product.'));
       return;
     }
-    await api.createBorrowRequest('lab', {
-      labId: user.labId,
-      studentName: studentName.trim(),
-      projectName: projectName.trim(),
-      dueDate,
-      items: buildBorrowItems()
-    });
-    setCart([]);
-    setStudentName('');
-    setProjectName('');
-    setDueDate('');
-    setStatusMessage(t('borrowCreated', 'Borrow request created with bill and invoice details.'));
-    await loadData();
+    try {
+      const record = await api.createBorrowRequest('lab', {
+        labId: user?.labId ?? '',
+        studentName: studentName.trim(),
+        projectName: projectName.trim(),
+        dueDate,
+        items: buildBorrowItems()
+      });
+      // Auto-download bill PDF immediately after creation
+      exportBorrowPdf(record);
+      setCart([]);
+      setStudentName('');
+      setProjectName('');
+      setDueDate('');
+      setStatusMessage(t('borrowCreated', 'Borrow bill generated and saved successfully.'));
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate borrow bill.';
+      setStatusMessage(msg);
+    }
   }
 
   async function markReturn(record: BorrowRecord, damaged: boolean) {
-    await api.returnBorrowItem('lab', record.borrowId, {
-      damaged,
-      remark: damaged ? 'Returned with physical damage' : 'Returned in good condition'
-    });
-    await loadData();
+    try {
+      await api.returnBorrowItem('lab', record.id, {
+        damaged,
+        remark: damaged ? 'Returned with physical damage' : 'Returned in good condition'
+      });
+      await loadData();
+    } catch {
+      setStatusMessage(t('returnFailed', 'Failed to mark return. Please try again.'));
+    }
   }
 
   function exportBorrowPdf(record: BorrowRecord) {

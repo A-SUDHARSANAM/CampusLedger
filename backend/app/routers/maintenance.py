@@ -7,7 +7,7 @@ from supabase import Client
 
 from app.routers.auth_routes import require_role
 from app.db.supabase import get_admin_client
-from app.services.qr_service import generate_qr_b64, decode_qr_payload
+from app.services.qr_service import generate_qr_b64, decode_qr_payload, generate_maintenance_qr
 from app.services.storage_service import upload_file, Bucket
 from app.services.notification_service import (
     notify_issue_raised, notify_staff_assigned, notify_maintenance_completed,
@@ -32,10 +32,14 @@ VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 class MaintenanceOut(BaseModel):
     id: str
     asset_id: Optional[str] = None
+    asset_name: Optional[str] = None      # enriched from assets
+    lab_id: Optional[str] = None          # enriched from assets
+    lab_name: Optional[str] = None        # enriched from labs
     # DB column names
     reported_by: Optional[str] = None
     assigned_staff: Optional[str] = None
     issue_description: Optional[str] = None
+    issue_type: Optional[str] = None
     priority: Optional[str] = None
     status: str
     image_url: Optional[str] = None
@@ -57,10 +61,34 @@ def _remap(row: dict) -> dict:
     return row
 
 
+def _enrich_maintenance_rows(sb: Client, rows: List[dict]) -> List[dict]:
+    """Batch-fetch asset_name + lab_name and inject into each row."""
+    asset_ids = list({r["asset_id"] for r in rows if r.get("asset_id")})
+    if not asset_ids:
+        return rows
+
+    assets_res = sb.table("assets").select("id, asset_name, lab_id").in_("id", asset_ids).execute()
+    asset_map: dict = {a["id"]: a for a in (assets_res.data or [])}
+
+    lab_ids = list({a.get("lab_id") for a in asset_map.values() if a.get("lab_id")})
+    lab_map: dict = {}
+    if lab_ids:
+        labs_res = sb.table("labs").select("id, lab_name").in_("id", lab_ids).execute()
+        lab_map = {l["id"]: l["lab_name"] for l in (labs_res.data or [])}
+
+    for row in rows:
+        asset = asset_map.get(row.get("asset_id", ""), {})
+        row["asset_name"] = asset.get("asset_name")
+        row["lab_id"]     = asset.get("lab_id")
+        row["lab_name"]   = lab_map.get(asset.get("lab_id", ""))
+    return rows
+
+
 class ReportRequest(BaseModel):
     asset_id: str
     description: str
     priority: str = "medium"
+    issue_type: str = "service_request"  # 'service_request' | 'purchase_request'
     image_url: Optional[str] = None
 
 
@@ -104,20 +132,27 @@ def report_issue(
     data = {
         "asset_id":          payload.asset_id,
         "issue_description": payload.description,   # correct DB column
+        "issue_type":        payload.issue_type,
         "priority":          payload.priority,
         "image_url":         payload.image_url,
         "reported_by":       current_user["id"],     # correct DB column
         "status":            "pending",
     }
-    result = sb.table("maintenance_requests").insert({k: v for k, v in data.items() if v is not None}).execute()
+    row_data = {k: v for k, v in data.items() if v is not None}
+    result = sb.table("maintenance_requests").insert(row_data).execute()
+    # Graceful fallback: if issue_type column doesn't exist yet, retry without it
+    if not result.data and "issue_type" in row_data:
+        row_data.pop("issue_type")
+        result = sb.table("maintenance_requests").insert(row_data).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create maintenance request")
-    row = result.data[0]
+    row = _remap(result.data[0])
+    _enrich_maintenance_rows(sb, [row])
     try:
         notify_issue_raised(sb, row["id"], payload.priority)
     except Exception:
         pass
-    return _remap(row)
+    return row
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +191,8 @@ def list_maintenance(
     if priority:
         q = q.eq("priority", priority)
 
-    return [_remap(r) for r in q.execute().data or []]
+    rows = [_remap(r) for r in q.execute().data or []]
+    return _enrich_maintenance_rows(sb, rows)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +206,7 @@ def assign_request(
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    existing = sb.table("maintenance_requests").select("id, status").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, status, asset_id").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
     if existing.data["status"] == "completed":
@@ -190,9 +226,11 @@ def assign_request(
     if assignee_role != "service_staff":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assignee must be a service_staff member")
 
+    qr_b64 = generate_maintenance_qr(request_id, existing.data["asset_id"], payload.assigned_to_id)
     result = sb.table("maintenance_requests").update({
         "assigned_staff": payload.assigned_to_id,   # correct DB column
         "status": "assigned",
+        "qr_code": qr_b64,
     }).eq("id", request_id).execute()
     row = result.data[0]
     try:

@@ -30,6 +30,12 @@ type DashData = {
   feedback_ratings_distribution: ChartPoint[];
 };
 
+type LocationAnalytics = {
+  byType: ChartPoint[];
+  byFacility: ChartPoint[];
+  maintenanceByLocation: ChartPoint[];
+};
+
 /* ───────────────────────────────────────────
    Colour palette
 ─────────────────────────────────────────── */
@@ -337,6 +343,7 @@ export function AdminDashboardPage() {
 
   const [kpis, setKpis] = useState<AdminKpis | null>(null);
   const [dash, setDash] = useState<DashData | null>(null);
+  const [locationAnalytics, setLocationAnalytics] = useState<LocationAnalytics | null>(null);
   const [animate, setAnimate] = useState(false);
   const [runningChecks, setRunningChecks] = useState(false);
   const [checksMsg, setChecksMsg] = useState('');
@@ -346,7 +353,10 @@ export function AdminDashboardPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const dashData = await api.getAnalyticsDashboard();
+      const [dashData, locData] = await Promise.all([
+        api.getAnalyticsDashboard(),
+        api.getLocationAnalytics(),
+      ]);
       if (dashData) {
         const k = dashData.asset_kpis;
         setKpis({
@@ -367,6 +377,7 @@ export function AdminDashboardPage() {
           feedback_ratings_distribution: dashData.feedback_ratings_distribution ?? [],
         });
       }
+      if (locData) setLocationAnalytics(locData);
     } finally {
       setLoading(false);
     }
@@ -506,6 +517,53 @@ export function AdminDashboardPage() {
           />
         </ChartCard>
       </div>
+
+      {/* ── Row 4: Location Analytics ─────────── */}
+      <div
+        className={`page-intro entry-animate ${animate ? 'in' : ''}`}
+        style={{ '--delay': '700ms', marginTop: 8 } as React.CSSProperties}
+      >
+        <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{t('locationAnalytics', 'Location Analytics')}</h3>
+        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', opacity: 0.65 }}>
+          {t('locationAnalyticsDesc', 'Asset distribution and maintenance across academic and non-academic facilities')}
+        </p>
+      </div>
+
+      <div className="chart-grid chart-grid-balanced">
+        <ChartCard
+          title={t('assetsByLocationType', 'Assets by Location Type')}
+          subtitle={t('academicVsNonAcademic', 'Academic vs Non-Academic')}
+          delay={720} animate={animate}
+        >
+          <ConicChart data={locationAnalytics?.byType ?? []} donut />
+        </ChartCard>
+
+        <ChartCard
+          title={t('maintenanceByLocation', 'Maintenance by Location')}
+          subtitle={t('requestsPerFacility', 'Requests per facility')}
+          delay={780} animate={animate}
+        >
+          <BarChart
+            data={locationAnalytics?.maintenanceByLocation ?? []}
+            multiColor
+            height={190}
+            labelRotate
+          />
+        </ChartCard>
+      </div>
+
+      <ChartCard
+        title={t('assetsByFacility', 'Assets by Facility')}
+        subtitle={t('allLocations', 'All locations — academic + non-academic')}
+        delay={840} animate={animate}
+      >
+        <BarChart
+          data={locationAnalytics?.byFacility ?? []}
+          multiColor
+          height={200}
+          labelRotate
+        />
+      </ChartCard>
 
     </div>
   );

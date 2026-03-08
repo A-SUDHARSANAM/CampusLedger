@@ -347,6 +347,102 @@ def asset_summary(
 
 
 # ---------------------------------------------------------------------------
+# GET /analytics/top-helpful-students
+#   Weekly leaderboard — public (no auth required)
+# ---------------------------------------------------------------------------
+
+class TopStudentEntry(BaseModel):
+    student_name: str
+    student_id: str
+    points: int
+
+
+@router.get(
+    "/top-helpful-students",
+    response_model=List[TopStudentEntry],
+    summary="Weekly top helpful students leaderboard (public)",
+)
+def top_helpful_students(
+    sb: Client = Depends(get_admin_client),
+):
+    """
+    Returns the top 5 students by helpful_score for the current ISO week.
+    Only rows where verified=true are counted.
+    Aggregation is performed in Python to stay compatible with the
+    Supabase PostgREST client (no raw-SQL grouping via the client SDK).
+    """
+    # Compute the start of the current ISO week (Monday 00:00 UTC)
+    today = date.today()
+    week_start = today - __import__("datetime").timedelta(days=today.weekday())
+    week_start_iso = f"{week_start.isoformat()}T00:00:00+00:00"
+
+    rows = (
+        sb.table("student_queries")
+        .select("student_name, student_id, helpful_score")
+        .eq("verified", True)
+        .gte("created_at", week_start_iso)
+        .execute()
+        .data or []
+    )
+
+    # Aggregate in Python: sum helpful_score per (student_name, student_id)
+    totals: dict = {}
+    for row in rows:
+        key = (row["student_name"], row["student_id"])
+        totals[key] = totals.get(key, 0) + int(row.get("helpful_score") or 0)
+
+    leaderboard = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    return [
+        TopStudentEntry(student_name=k[0], student_id=k[1], points=v)
+        for k, v in leaderboard
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/top-helpful-students/all-time
+#   Admin view — all-time top 10 contributors
+# ---------------------------------------------------------------------------
+
+class TopStudentAllTimeEntry(BaseModel):
+    student_name: str
+    points: int
+
+
+@router.get(
+    "/top-helpful-students/all-time",
+    response_model=List[TopStudentAllTimeEntry],
+    summary="All-time top 10 helpful students — admin dashboard",
+)
+def top_helpful_students_all_time(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+):
+    """
+    Aggregates helpful_score across all time for the admin dashboard.
+    Returns the top 10 students ordered by total points descending.
+    """
+    rows = (
+        sb.table("student_queries")
+        .select("student_name, helpful_score")
+        .execute()
+        .data or []
+    )
+
+    totals: dict = {}
+    for row in rows:
+        name = row["student_name"]
+        totals[name] = totals.get(name, 0) + int(row.get("helpful_score") or 0)
+
+    leaderboard = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return [
+        TopStudentAllTimeEntry(student_name=name, points=pts)
+        for name, pts in leaderboard
+    ]
+
+
+# ---------------------------------------------------------------------------
 # POST /analytics/run-checks
 # ---------------------------------------------------------------------------
 class RunChecksResponse(BaseModel):
@@ -370,3 +466,133 @@ def run_checks(
         delayed_orders_notified      = delayed,
         expiring_warranties_notified = expiring,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/assets-by-location-type
+#   Assets split by location type (Academic vs Non-Academic)
+# ---------------------------------------------------------------------------
+@router.get(
+    "/assets-by-location-type",
+    response_model=List[ChartPoint],
+    summary="Assets grouped by location type (admin only)",
+)
+def assets_by_location_type(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+):
+    assets = sb.table("assets").select("location_id").execute().data or []
+    loc_ids = list({a["location_id"] for a in assets if a.get("location_id")})
+
+    loc_type_map: dict = {}
+    if loc_ids:
+        locs = sb.table("locations").select("id, type").in_("id", loc_ids).execute().data or []
+        loc_type_map = {l["id"]: l["type"] for l in locs}
+
+    counts: dict = defaultdict(int)
+    for a in assets:
+        lid = a.get("location_id")
+        if lid:
+            raw_type = loc_type_map.get(lid, "unassigned")
+            label = raw_type.replace("_", " ").title()
+        else:
+            label = "Unassigned"
+        counts[label] += 1
+
+    return [ChartPoint(label=k, value=float(v)) for k, v in sorted(counts.items())]
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/assets-by-facility
+#   Assets grouped by facility (location name)
+# ---------------------------------------------------------------------------
+@router.get(
+    "/assets-by-facility",
+    response_model=List[ChartPoint],
+    summary="Assets grouped by facility/location name (admin only)",
+)
+def assets_by_facility(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+):
+    assets = sb.table("assets").select("location_id, lab_id").execute().data or []
+
+    # Resolve location names
+    loc_ids = list({a["location_id"] for a in assets if a.get("location_id")})
+    loc_name_map: dict = {}
+    if loc_ids:
+        locs = sb.table("locations").select("id, name").in_("id", loc_ids).execute().data or []
+        loc_name_map = {l["id"]: l["name"] for l in locs}
+
+    # Resolve lab names for backward-compat assets that only have lab_id
+    lab_ids = list({a["lab_id"] for a in assets if a.get("lab_id") and not a.get("location_id")})
+    lab_name_map: dict = {}
+    if lab_ids:
+        labs = sb.table("labs").select("id, lab_name").in_("id", lab_ids).execute().data or []
+        lab_name_map = {l["id"]: l["lab_name"] for l in labs}
+
+    counts: dict = defaultdict(int)
+    for a in assets:
+        if a.get("location_id"):
+            label = loc_name_map.get(a["location_id"], "Unknown Location")
+        elif a.get("lab_id"):
+            label = lab_name_map.get(a["lab_id"], "Unknown Lab")
+        else:
+            label = "Unassigned"
+        counts[label] += 1
+
+    return [ChartPoint(label=k, value=float(v)) for k, v in sorted(counts.items())]
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/maintenance-by-location
+#   Maintenance requests grouped by the location of the affected asset
+# ---------------------------------------------------------------------------
+@router.get(
+    "/maintenance-by-location",
+    response_model=List[ChartPoint],
+    summary="Maintenance requests grouped by location (admin only)",
+)
+def maintenance_by_location(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin),
+):
+    maint_rows = sb.table("maintenance_requests").select("asset_id").execute().data or []
+    asset_ids = list({r["asset_id"] for r in maint_rows if r.get("asset_id")})
+    if not asset_ids:
+        return []
+
+    assets = (
+        sb.table("assets")
+        .select("id, location_id, lab_id")
+        .in_("id", asset_ids)
+        .execute()
+        .data or []
+    )
+    asset_map: dict = {a["id"]: a for a in assets}
+
+    loc_ids = list({a.get("location_id") for a in assets if a.get("location_id")})
+    loc_name_map: dict = {}
+    if loc_ids:
+        locs = sb.table("locations").select("id, name").in_("id", loc_ids).execute().data or []
+        loc_name_map = {l["id"]: l["name"] for l in locs}
+
+    lab_ids = list({a.get("lab_id") for a in assets if a.get("lab_id") and not a.get("location_id")})
+    lab_name_map: dict = {}
+    if lab_ids:
+        labs = sb.table("labs").select("id, lab_name").in_("id", lab_ids).execute().data or []
+        lab_name_map = {l["id"]: l["lab_name"] for l in labs}
+
+    counts: dict = defaultdict(int)
+    for r in maint_rows:
+        asset = asset_map.get(r.get("asset_id", ""), {})
+        if asset.get("location_id"):
+            label = loc_name_map.get(asset["location_id"], "Unknown Location")
+        elif asset.get("lab_id"):
+            label = lab_name_map.get(asset["lab_id"], "Unknown Lab")
+        else:
+            label = "Unassigned"
+        counts[label] += 1
+
+    return [ChartPoint(label=k, value=float(v)) for k, v in sorted(counts.items())]
+

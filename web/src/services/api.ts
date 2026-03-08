@@ -8,6 +8,7 @@ import type {
   BorrowStatus,
   ElectronicsCatalogItem,
   LabInfo,
+  LocationInfo,
   MaintenanceHistoryEntry,
   MaintenanceRequest,
   MaintenanceStatus,
@@ -209,8 +210,12 @@ function adaptAsset(raw: Record<string, unknown>): Asset {
     assetCode: String(raw.serial_number ?? raw.id ?? ''),
     name: String(raw.asset_name ?? ''),
     category: String(raw.category ?? ''),
-    location: String(raw.lab_name ?? raw.location ?? raw.lab_id ?? ''),
+    // Display: prefer location_name, then lab_name, then raw location/lab_id
+    location: String(raw.location_name ?? raw.lab_name ?? raw.location ?? raw.lab_id ?? ''),
     labId: String(raw.lab_id ?? ''),
+    locationId: raw.location_id ? String(raw.location_id) : undefined,
+    locationName: raw.location_name ? String(raw.location_name) : undefined,
+    locationType: raw.location_type ? String(raw.location_type) : undefined,
     status: statusMap[String(raw.status ?? '').toLowerCase()] ?? 'Active',
     warranty: String(raw.warranty_expiry ?? ''),
     serialNumber: raw.serial_number ? String(raw.serial_number) : undefined,
@@ -227,6 +232,51 @@ function adaptLab(raw: Record<string, unknown>): LabInfo {
     department: String(raw.department ?? ''),
     assetCount: Number(raw.asset_count ?? 0),
     incharge: String(raw.technician_id ?? raw.incharge ?? '')
+  };
+}
+
+function adaptCatalogItem(raw: Record<string, unknown>): ElectronicsCatalogItem {
+  return {
+    id: String(raw.id ?? ''),
+    sku: String(raw.sku ?? raw.id ?? ''),
+    name: String(raw.name ?? raw.item_name ?? ''),
+    category: String(raw.category ?? ''),
+    unitCost: Number(raw.unit_cost ?? raw.unitCost ?? 0),
+    warrantyMonths: Number(raw.warranty_months ?? raw.warrantyMonths ?? 12),
+    inStock: Number(raw.in_stock ?? raw.quantity ?? 0),
+  };
+}
+
+function adaptBorrowRecord(raw: Record<string, unknown>): BorrowRecord {
+  const statusMap: Record<string, BorrowStatus> = {
+    borrowed: 'Borrowed',
+    returned: 'Returned',
+    late_return: 'Late Return',
+    damaged: 'Damaged',
+  };
+  const rawItems = Array.isArray(raw.items) ? raw.items as Record<string, unknown>[] : [];
+  return {
+    id: String(raw.id ?? ''),
+    borrowId: String(raw.borrow_id ?? raw.bill_no ?? raw.id ?? ''),
+    billNo: String(raw.bill_no ?? ''),
+    invoiceNo: String(raw.invoice_no ?? ''),
+    labId: String(raw.lab_id ?? ''),
+    studentName: String(raw.student_name ?? ''),
+    projectName: String(raw.project_name ?? ''),
+    createdDate: String((raw.created_date ?? raw.created_at ?? '').toString().slice(0, 10)),
+    dueDate: String(raw.due_date ?? ''),
+    returnedDate: raw.returned_date ? String(raw.returned_date) : undefined,
+    status: statusMap[String(raw.status ?? '').toLowerCase()] ?? 'Borrowed',
+    issueUpdates: Array.isArray(raw.issue_updates) ? (raw.issue_updates as string[]) : ['Issued by lab technician'],
+    fineAmount: Number(raw.fine_amount ?? 0),
+    items: rawItems.map((item) => ({
+      itemId: String(item.stock_id ?? item.itemId ?? ''),
+      sku: String(item.sku ?? ''),
+      productName: String(item.product_name ?? item.productName ?? ''),
+      quantity: Number(item.quantity ?? 1),
+      unitCost: Number(item.unit_cost ?? item.unitCost ?? 0),
+      warrantyMonths: Number(item.warranty_months ?? item.warrantyMonths ?? 12),
+    })),
   };
 }
 
@@ -267,7 +317,9 @@ function adaptMaintenance(raw: Record<string, unknown>): MaintenanceRequest {
     assignedTo: raw.assigned_to_id ? String(raw.assigned_to_id) : undefined,
     priority: priorityMap[String(raw.priority ?? '').toLowerCase()] ?? 'Medium',
     issue: String(raw.description ?? raw.issue_description ?? ''),
+    issueType: raw.issue_type ? String(raw.issue_type) : 'service_request',
     createdAt: raw.created_at ? String(raw.created_at).slice(0, 10) : undefined,
+    qrCode: raw.qr_code ? String(raw.qr_code) : undefined,
     history: []
   };
 }
@@ -567,7 +619,7 @@ export const api = {
     const params = role === 'lab' && labId ? `?lab_id=${labId}` : '';
     const data = await backendGet<Record<string, unknown>[]>(`/assets/${params}`);
     if (data) return data.map(adaptAsset);
-    if (role === 'lab') return delay(assets.filter((a) => a.labId === labId));
+    if (role === 'lab') return delay(labId ? assets.filter((a) => a.labId === labId) : [...assets]);
     return delay([...assets]);
   },
 
@@ -585,6 +637,7 @@ export const api = {
       asset_name: payload.name,
       category: payload.category,
       lab_id: labId,
+      location_id: payload.locationId || undefined,
       serial_number: payload.assetCode || undefined,
       warranty_expiry: payload.warranty || undefined,
       purchase_date: payload.purchaseDate || undefined,
@@ -639,6 +692,36 @@ export const api = {
     return (data ?? []).map((d) => ({ id: d.id, name: d.department_name }));
   },
 
+  async getLocations(): Promise<LocationInfo[]> {
+    const data = await backendGet<LocationInfo[]>('/locations');
+    return data ?? [];
+  },
+
+  async getLocationAssets(locationId: string): Promise<{ id: string; name: string; assetCode?: string }[]> {
+    const data = await backendGet<{ id: string; asset_name: string; status: string; serial_number?: string }[]>(
+      `/locations/${locationId}/assets`
+    );
+    if (!data) return [];
+    return data.map((a) => ({ id: a.id, name: a.asset_name, assetCode: a.serial_number }));
+  },
+
+  async getLocationAnalytics(): Promise<{
+    byType: { label: string; value: number }[];
+    byFacility: { label: string; value: number }[];
+    maintenanceByLocation: { label: string; value: number }[];
+  }> {
+    const [byType, byFacility, byLoc] = await Promise.all([
+      backendGet<{ label: string; value: number }[]>('/analytics/assets-by-location-type'),
+      backendGet<{ label: string; value: number }[]>('/analytics/assets-by-facility'),
+      backendGet<{ label: string; value: number }[]>('/analytics/maintenance-by-location'),
+    ]);
+    return {
+      byType: byType ?? [],
+      byFacility: byFacility ?? [],
+      maintenanceByLocation: byLoc ?? [],
+    };
+  },
+
   async createLab(role: Role, payload: { lab_name: string; department_id: string; location: string }): Promise<LabInfo> {
     if (role !== 'admin') throw new Error('Permission denied.');
     const data = await backendPost<Record<string, unknown>>('/labs', payload);
@@ -689,22 +772,11 @@ export const api = {
     return delay([...maintenanceRequests]);
   },
 
-  async raiseMaintenanceRequest(role: Role, payload: { assetId: string; labId: string; issue: string; priority: Priority }): Promise<MaintenanceRequest> {
+  async raiseMaintenanceRequest(role: Role, payload: { assetId: string; labId: string; issue: string; priority: Priority; issueType?: string }): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:raise');
-    const body = { asset_id: payload.assetId, description: payload.issue, priority: payload.priority.toLowerCase() };
-    const data = await backendPost<Record<string, unknown>>('/maintenance/report', body);
-    if (data) return adaptMaintenance(data);
-    const asset = assets.find((a) => a.id === payload.assetId && a.labId === payload.labId);
-    if (!asset) throw new Error('Asset not found for this lab.');
-    const created: MaintenanceRequest = {
-      id: `maint-${Math.random().toString(36).slice(2, 8)}`, requestId: `REQ-${Math.floor(1000 + Math.random() * 9000)}`,
-      assetId: asset.id, assetCode: asset.assetCode, assetName: asset.name,
-      labId: payload.labId, labName: findLabName(payload.labId),
-      status: 'Pending', priority: payload.priority, issue: payload.issue,
-      history: [nextMaintenanceHistoryEntry('Lab', 'Pending', payload.issue)]
-    };
-    maintenanceRequests = [created, ...maintenanceRequests];
-    return delay(created);
+    const body = { asset_id: payload.assetId, description: payload.issue, priority: payload.priority.toLowerCase(), issue_type: payload.issueType ?? 'service_request' };
+    const data = await backendPostOrThrow<Record<string, unknown>>('/maintenance/report', body);
+    return adaptMaintenance(data);
   },
 
   async assignMaintenanceRequest(role: Role, requestId: string, assignee: string): Promise<MaintenanceRequest> {
@@ -741,6 +813,27 @@ export const api = {
     return delay(updated);
   },
 
+  /** Fetch the QR code for an assigned maintenance request (admin only). */
+  async getMaintenanceQR(requestId: string): Promise<{ request_id: string; qr_base64: string } | null> {
+    return backendGet<{ request_id: string; qr_base64: string }>(`/maintenance/${requestId}/qr`);
+  },
+
+  /**
+   * Submit a QR scan result to mark a maintenance request as completed.
+   * Called by the service staff after scanning the QR code on-site.
+   */
+  async scanMaintenanceQR(
+    issueId: string,
+    assetId: string,
+    staffId: string,
+  ): Promise<{ message: string; request_id: string }> {
+    return backendPostOrThrow<{ message: string; request_id: string }>('/qr/scan', {
+      issue_id: issueId,
+      asset_id: assetId,
+      staff_id: staffId,
+    });
+  },
+
   // ── Procurement / Purchase ────────────────────────────────────────────────
   async getProcurementRequests(role: Role, labId?: string): Promise<ProcurementRequest[]> {
     const params = role === 'lab' && labId ? `?lab_id=${labId}` : '';
@@ -754,19 +847,21 @@ export const api = {
   async createProcurementRequest(role: Role, payload: { requestedByLabId: string; category: ProcurementCategory; notes?: string; items: BorrowItem[] }): Promise<ProcurementRequest> {
     assertPermission(role, 'procurement:create');
     if (payload.items.length === 0) throw new Error('At least one item is required.');
-    const firstItem = payload.items[0];
-    const body = { lab_id: payload.requestedByLabId, item_name: firstItem.productName, quantity: firstItem.quantity, estimated_cost: firstItem.unitCost, notes: payload.notes };
-    const data = await backendPost<Record<string, unknown>>('/purchase/request', body);
-    if (data) return adaptProcurement(data);
-    const sequence = 5000 + procurementRequests.length + 1;
-    const created: ProcurementRequest = {
-      id: `pr-${Math.random().toString(36).slice(2, 8)}`, requestNo: `PR-${sequence}`,
-      requestedByLabId: payload.requestedByLabId, requestedByLabName: findLabName(payload.requestedByLabId),
-      category: payload.category, createdDate: new Date().toISOString().slice(0, 10),
-      status: 'Pending Admin Approval', notes: payload.notes, items: payload.items
-    };
-    procurementRequests = [created, ...procurementRequests];
-    return delay(created);
+    // Submit one backend purchase_request row per cart item so every item is
+    // individually visible to the admin.  All rows share the same notes / lab.
+    const created: ProcurementRequest[] = [];
+    for (const item of payload.items) {
+      const body = {
+        item_name:      item.productName,
+        quantity:       item.quantity,
+        estimated_cost: item.unitCost,
+        notes:          payload.notes,
+        lab_id:         payload.requestedByLabId,
+      };
+      const data = await backendPostOrThrow<Record<string, unknown>>('/purchase/request', body);
+      created.push(adaptProcurement(data));
+    }
+    return created[0];
   },
 
   async approveProcurementRequest(role: Role, requestId: string): Promise<ProcurementRequest> {
@@ -852,14 +947,23 @@ export const api = {
 
   // ── Notifications ─────────────────────────────────────────────────────────
   async getNotifications(): Promise<Notification[]> {
-    const data = await backendGet<Notification[]>('/notifications');
-    return data ?? [];
+    type RawNotif = { id: string; user_id: string; message: string; status: string; created_at: string };
+    const data = await backendGet<RawNotif[]>('/notifications');
+    if (!data) return [];
+    return data.map((n) => ({
+      id: n.id,
+      user_id: n.user_id,
+      title: n.message,
+      body: '',
+      is_read: n.status === 'read',
+      created_at: n.created_at,
+    }));
   },
 
   async getUnreadCount(): Promise<number> {
-    type CountResponse = { count: number };
+    type CountResponse = { unread_count: number };
     const data = await backendGet<CountResponse>('/notifications/unread-count');
-    return data?.count ?? 0;
+    return data?.unread_count ?? 0;
   },
 
   async markNotificationRead(notificationId: string): Promise<void> {
@@ -874,12 +978,21 @@ export const api = {
     await backendDelete(`/notifications/${notificationId}`);
   },
 
-  // ── Electronics Catalog (mock only) ──────────────────────────────────────
-  async getElectronicsCatalog() { return delay([...electronicsCatalog]); },
+  // ── Electronics Catalog ──────────────────────────────────────────────────
+  async getElectronicsCatalog(labId?: string): Promise<ElectronicsCatalogItem[]> {
+    const params = labId ? `?lab_id=${labId}` : '';
+    const data = await backendGet<Record<string, unknown>[]>(`/borrow/catalog${params}`);
+    if (data && data.length > 0) return data.map(adaptCatalogItem);
+    // Fallback to mock when backend catalog is empty or unavailable
+    return delay([...electronicsCatalog]);
+  },
 
-  // ── Borrow Records (mock only) ────────────────────────────────────────────
+  // ── Borrow Records ────────────────────────────────────────────────────────
   async getBorrowRecords(role: Role, labId?: string): Promise<BorrowRecord[]> {
     assertPermission(role, 'borrow:view');
+    const params = role === 'lab' && labId ? `?lab_id=${labId}` : '';
+    const data = await backendGet<Record<string, unknown>[]>(`/borrow/records${params}`);
+    if (data) return data.map(adaptBorrowRecord);
     if (role === 'lab') return delay(borrowRecords.filter((r) => r.labId === labId));
     return delay([...borrowRecords]);
   },
@@ -887,6 +1000,23 @@ export const api = {
   async createBorrowRequest(role: Role, payload: { labId: string; studentName: string; projectName: string; dueDate: string; items: BorrowItem[] }): Promise<BorrowRecord> {
     assertPermission(role, 'borrow:create');
     if (payload.items.length === 0) throw new Error('At least one item is required.');
+    const body = {
+      lab_id: payload.labId,
+      student_name: payload.studentName,
+      project_name: payload.projectName,
+      due_date: payload.dueDate,
+      items: payload.items.map((item) => ({
+        stock_id: item.itemId || null,
+        sku: item.sku,
+        product_name: item.productName,
+        quantity: item.quantity,
+        unit_cost: item.unitCost,
+        warranty_months: item.warrantyMonths,
+      })),
+    };
+    const data = await backendPost<Record<string, unknown>>('/borrow/records', body);
+    if (data) return adaptBorrowRecord(data);
+    // Mock fallback
     const seq = 3000 + borrowRecords.length + 1;
     const created: BorrowRecord = {
       id: `br-${Math.random().toString(36).slice(2, 8)}`, borrowId: `BOR-${seq}`,
@@ -901,10 +1031,19 @@ export const api = {
 
   async returnBorrowItem(role: Role, borrowId: string, payload: { damaged: boolean; remark: string; returnedDate?: string }): Promise<BorrowRecord> {
     assertPermission(role, 'borrow:return');
-    const index = borrowRecords.findIndex((r) => r.borrowId === borrowId);
+    // borrowId here could be the DB UUID (id) or the human-readable BOR-xxxx
+    // Try to find the real UUID from current records
+    const allRecords = await this.getBorrowRecords(role);
+    const record = allRecords.find((r) => r.borrowId === borrowId || r.id === borrowId);
+    const realId = record?.id ?? borrowId;
+    const returnedDate = payload.returnedDate ?? new Date().toISOString().slice(0, 10);
+    const body = { damaged: payload.damaged, remark: payload.remark, returned_date: returnedDate };
+    const data = await backendPut<Record<string, unknown>>(`/borrow/records/${realId}/return`, body);
+    if (data) return adaptBorrowRecord(data);
+    // Mock fallback
+    const index = borrowRecords.findIndex((r) => r.borrowId === borrowId || r.id === borrowId);
     if (index < 0) throw new Error('Borrow record not found.');
     const current = borrowRecords[index];
-    const returnedDate = payload.returnedDate ?? new Date().toISOString().slice(0, 10);
     const late = new Date(returnedDate).getTime() > new Date(current.dueDate).getTime();
     const updated: BorrowRecord = {
       ...current, status: nextBorrowStatus(current.status, payload.damaged, late),
@@ -918,5 +1057,53 @@ export const api = {
   async getBorrowSummary(role: Role, labId?: string) {
     const rows = await this.getBorrowRecords(role, labId);
     return delay({ totalBorrowed: rows.length, pendingReturns: rows.filter((r) => r.status === 'Borrowed').length, penaltyCollected: rows.reduce((s, r) => s + r.fineAmount, 0), issuedValue: rows.reduce((s, r) => s + totalAmount(r.items), 0) });
-  }
+  },
+
+  // ── Student Queries (public — no auth required) ───────────────────────────
+
+  async getTopHelpfulStudents(): Promise<{ student_name: string; student_id: string; points: number }[]> {
+    const data = await backendGet<{ student_name: string; student_id: string; points: number }[]>(
+      '/analytics/top-helpful-students'
+    );
+    return data ?? [];
+  },
+
+  async getPublicLabs(): Promise<{ id: string; lab_name: string }[]> {
+    const data = await backendGet<{ id: string; lab_name: string }[]>('/student-queries/public/labs');
+    return data ?? [];
+  },
+
+  async getPublicAssets(labId: string): Promise<{ id: string; asset_name: string }[]> {
+    const data = await backendGet<{ id: string; asset_name: string }[]>(
+      `/student-queries/public/assets?lab_id=${encodeURIComponent(labId)}`
+    );
+    return data ?? [];
+  },
+
+  async submitStudentQuery(body: {
+    student_name: string;
+    student_id: string;
+    department: string;
+    lab_id: string;
+    asset_id?: string;
+    issue_description: string;
+    priority: string;
+  }): Promise<void> {
+    await backendPostOrThrow('/student-queries/', body);
+  },
+
+  async getTechnicianStudentQueries(technicianId: string): Promise<Record<string, unknown>[]> {
+    const data = await backendGet<Record<string, unknown>[]>(
+      `/technician/student-queries/${encodeURIComponent(technicianId)}`
+    );
+    return data ?? [];
+  },
+
+  async reviewStudentQuery(queryId: string, decision: 'valid' | 'invalid'): Promise<void> {
+    await backendPut(`/student-queries/${encodeURIComponent(queryId)}/review`, { decision });
+  },
+
+  async convertQueryToMaintenance(queryId: string): Promise<void> {
+    await backendPostOrThrow(`/student-queries/${encodeURIComponent(queryId)}/convert-to-maintenance`, {});
+  },
 };

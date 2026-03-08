@@ -10,11 +10,16 @@ from app.routers import (
     users_router,
     labs_router,
     assets_router,
+    locations_router,
     maintenance_router,
     purchase_router,
     analytics_router,
     notifications_router,
     reports_router,
+    borrow_router,
+    qr_router,
+    student_queries_router,
+    technician_router,
 )
 
 API_PREFIX = "/api/v1"
@@ -65,11 +70,16 @@ app.include_router(auth_routes_router,   prefix=API_PREFIX)
 app.include_router(users_router,         prefix=API_PREFIX)
 app.include_router(labs_router,          prefix=API_PREFIX)
 app.include_router(assets_router,        prefix=API_PREFIX)
+app.include_router(locations_router,     prefix=API_PREFIX)
 app.include_router(maintenance_router,   prefix=API_PREFIX)
 app.include_router(purchase_router,      prefix=API_PREFIX)
 app.include_router(analytics_router,     prefix=API_PREFIX)
 app.include_router(notifications_router, prefix=API_PREFIX)
 app.include_router(reports_router,       prefix=API_PREFIX)
+app.include_router(borrow_router,           prefix=API_PREFIX)
+app.include_router(qr_router,               prefix=API_PREFIX)
+app.include_router(student_queries_router,  prefix=API_PREFIX)
+app.include_router(technician_router,        prefix=API_PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

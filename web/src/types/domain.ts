@@ -4,6 +4,13 @@ export type AssetStatus = 'Active' | 'Damaged' | 'Under Maintenance';
 export type MaintenanceStatus = 'Pending' | 'In Progress' | 'Completed';
 export type Priority = 'Low' | 'Medium' | 'High';
 
+export type LocationInfo = {
+  id: string;
+  name: string;
+  type: 'academic' | 'non_academic';
+  lab_id?: string;
+};
+
 export type Asset = {
   id: string;
   assetCode: string;
@@ -11,6 +18,9 @@ export type Asset = {
   category: string;
   location: string;
   labId: string;
+  locationId?: string;
+  locationName?: string;
+  locationType?: string;
   status: AssetStatus;
   warranty: string;
   // Extended backend fields
@@ -69,7 +79,9 @@ export type MaintenanceRequest = {
   assignedToName?: string;  // resolved display name
   priority: Priority;
   issue: string;
+  issueType?: string;       // 'service_request' | 'purchase_request'
   createdAt?: string;
+  qrCode?: string;          // base64 PNG QR code (present when status is "assigned" or later)
   history: MaintenanceHistoryEntry[];
 };
 

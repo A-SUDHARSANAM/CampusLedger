@@ -26,6 +26,9 @@ class AssetOut(BaseModel):
     category: Optional[str] = None
     lab_id: Optional[str] = None
     lab_name: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    location_type: Optional[str] = None
     serial_number: Optional[str] = None
     purchase_date: Optional[str] = None
     warranty_expiry: Optional[str] = None
@@ -38,6 +41,7 @@ class AssetCreate(BaseModel):
     asset_name: str
     category: Optional[str] = None
     lab_id: Optional[str] = None
+    location_id: Optional[str] = None
     serial_number: Optional[str] = None
     purchase_date: Optional[str] = None
     warranty_expiry: Optional[str] = None
@@ -57,6 +61,7 @@ class AssetUpdate(BaseModel):
     asset_name: Optional[str] = None
     category: Optional[str] = None
     lab_id: Optional[str] = None
+    location_id: Optional[str] = None
     serial_number: Optional[str] = None
     purchase_date: Optional[str] = None
     warranty_expiry: Optional[str] = None
@@ -80,13 +85,17 @@ def _resolve_category_id(sb: Client, category_name: str) -> Optional[str]:
 
 
 # Helper: build a full AssetOut dict from a raw DB row + lookups
-def _enrich_asset(a: dict, lab_map: dict, cat_map: dict) -> dict:
+def _enrich_asset(a: dict, lab_map: dict, cat_map: dict, loc_map: dict | None = None) -> dict:
     cat_id = a.get("category_id")
     lab_id = a.get("lab_id")
+    loc_id = a.get("location_id")
+    loc = (loc_map or {}).get(loc_id, {}) if loc_id else {}
     return {
         **a,
         "category": cat_map.get(cat_id) if cat_id else None,
         "lab_name": lab_map.get(lab_id) if lab_id else None,
+        "location_name": loc.get("name") if loc else None,
+        "location_type": loc.get("type") if loc else None,
     }
 
 
@@ -99,6 +108,36 @@ def list_categories(
     _: dict = Depends(_require_admin_or_tech),
 ):
     result = sb.table("asset_categories").select("id, category_name").order("category_name").execute()
+    return result.data or []
+
+
+# ---------------------------------------------------------------------------
+# GET /assets/lab/{lab_id}
+#   Returns a lightweight asset list for a specific lab (id + asset_name only)
+#   Used by the Report Issue modal dropdown
+# ---------------------------------------------------------------------------
+class LabAssetOut(BaseModel):
+    id: str
+    asset_name: str
+
+
+@router.get(
+    "/lab/{lab_id}",
+    response_model=List[LabAssetOut],
+    summary="List assets in a specific lab (lightweight)",
+)
+def list_lab_assets(
+    lab_id: str,
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_admin_or_tech),
+):
+    result = (
+        sb.table("assets")
+        .select("id, asset_name")
+        .eq("lab_id", lab_id)
+        .order("asset_name")
+        .execute()
+    )
     return result.data or []
 
 
@@ -159,7 +198,14 @@ def list_assets(
         cats_res = sb.table("asset_categories").select("id, category_name").in_("id", cat_ids).execute()
         cat_map = {c["id"]: c["category_name"] for c in (cats_res.data or [])}
 
-    return [_enrich_asset(a, lab_map, cat_map) for a in assets_data]
+    # Batch-resolve location names
+    loc_ids = list({a["location_id"] for a in assets_data if a.get("location_id")})
+    loc_map: dict = {}
+    if loc_ids:
+        locs_res = sb.table("locations").select("id, name, type").in_("id", loc_ids).execute()
+        loc_map = {l["id"]: l for l in (locs_res.data or [])}
+
+    return [_enrich_asset(a, lab_map, cat_map, loc_map) for a in assets_data]
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +262,11 @@ def create_asset(
     if asset.get("category_id"):
         cr = sb.table("asset_categories").select("id, category_name").eq("id", asset["category_id"]).limit(1).execute()
         cat_map = {r["id"]: r["category_name"] for r in (cr.data or [])}
-    return _enrich_asset(asset, lab_map, cat_map)
+    loc_map: dict = {}
+    if asset.get("location_id"):
+        locr = sb.table("locations").select("id, name, type").eq("id", asset["location_id"]).limit(1).execute()
+        loc_map = {l["id"]: l for l in (locr.data or [])}
+    return _enrich_asset(asset, lab_map, cat_map, loc_map)
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +326,11 @@ def update_asset(
     if asset.get("category_id"):
         cr = sb.table("asset_categories").select("id, category_name").eq("id", asset["category_id"]).limit(1).execute()
         cat_map = {r["id"]: r["category_name"] for r in (cr.data or [])}
-    return _enrich_asset(asset, lab_map, cat_map)
+    loc_map: dict = {}
+    if asset.get("location_id"):
+        locr = sb.table("locations").select("id, name, type").eq("id", asset["location_id"]).limit(1).execute()
+        loc_map = {l["id"]: l for l in (locr.data or [])}
+    return _enrich_asset(asset, lab_map, cat_map, loc_map)
 
 
 # ---------------------------------------------------------------------------

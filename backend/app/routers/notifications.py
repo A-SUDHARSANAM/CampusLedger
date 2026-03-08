@@ -20,18 +20,14 @@ _require_admin = require_role("admin")
 class NotificationOut(BaseModel):
     id: str
     user_id: str
-    title: str
     message: str
-    type: Optional[str] = None
-    is_read: bool
+    status: str = "unread"   # 'unread' | 'read'
     created_at: Optional[str] = None
 
 
 class NotificationCreate(BaseModel):
     user_id: str
-    title: str
     message: str
-    type: Optional[str] = "info"
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +50,7 @@ def list_notifications(
         .order("created_at", desc=True)
     )
     if unread_only:
-        q = q.eq("is_read", False)
+        q = q.eq("status", "unread")
     return q.execute().data or []
 
 
@@ -70,7 +66,7 @@ def unread_count(
         sb.table("notifications")
         .select("id", count="exact")
         .eq("user_id", current_user["id"])
-        .eq("is_read", False)
+        .eq("status", "unread")
         .execute()
     )
     return {"unread_count": result.count or 0}
@@ -95,7 +91,7 @@ def mark_read(
     )
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
-    result = sb.table("notifications").update({"is_read": True}).eq("id", notif_id).execute()
+    result = sb.table("notifications").update({"status": "read"}).eq("id", notif_id).execute()
     return result.data[0]
 
 
@@ -107,7 +103,7 @@ def mark_all_read(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_any),
 ):
-    sb.table("notifications").update({"is_read": True}).eq("user_id", current_user["id"]).eq("is_read", False).execute()
+    sb.table("notifications").update({"status": "read"}).eq("user_id", current_user["id"]).eq("status", "unread").execute()
     return {"message": "All notifications marked as read"}
 
 

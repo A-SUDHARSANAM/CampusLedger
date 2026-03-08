@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, Dimensions, TouchableOpacity, Alert } from 'react-native';
 import { TextInput, Button, Text, Surface, useTheme, Avatar, Chip } from 'react-native-paper';
 import { ShieldCheck, Lock, Mail, ChevronRight, UserCircle, Microscope, Settings } from 'lucide-react-native';
 import { useAuth } from '../context/AuthContext';
+
+// ─── Backend configuration ────────────────────────────────────────────────────
+// Update this to your server's address when running on a real device.
+// Android emulator: http://10.0.2.2:8000/api/v1
+// iOS simulator / local: http://localhost:8000/api/v1
+const BACKEND_URL = 'http://10.0.2.2:8000/api/v1';
 
 const { width } = Dimensions.get('window');
 
@@ -17,14 +23,30 @@ export default function LoginScreen({ navigation }: any) {
     const theme = useTheme();
     const { login } = useAuth();
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
+        if (!email.trim() || !password.trim()) {
+            Alert.alert('Missing Credentials', 'Please enter your email and password.');
+            return;
+        }
         setIsLoading(true);
-        // Simulate auth
-        setTimeout(() => {
-            login(selectedRole);
-            setIsLoading(false);
+        try {
+            const res = await fetch(`${BACKEND_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email.trim(), password }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data?.detail ?? 'Login failed. Check your credentials.');
+            }
+            login(selectedRole, data.user?.id ?? null, data.access_token ?? null);
             navigation.replace('Main');
-        }, 1000);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Unable to reach the server.';
+            Alert.alert('Authentication Failed', message);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const roles = [

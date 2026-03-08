@@ -135,6 +135,24 @@ def _fetch_user_profile(user_id: str) -> dict:
     depts_obj = row.pop("departments", None) or {}
     row["role"] = roles_obj.get("role_name", "")
     row["dept_name"] = depts_obj.get("department_name", "")
+
+    # Fallback: if the FK join returned null (schema cache miss or stale FK),
+    # look up the role directly using the stored role_id.
+    if not row["role"] and row.get("role_id"):
+        try:
+            role_res = (
+                admin_client
+                .table("roles")
+                .select("role_name")
+                .eq("id", row["role_id"])
+                .limit(1)
+                .execute()
+            )
+            if role_res.data:
+                row["role"] = role_res.data[0]["role_name"]
+        except Exception:
+            pass
+
     return row
 
 
@@ -156,15 +174,31 @@ def get_current_user(
     token = credentials.credentials
 
     # ── Validate token via Supabase (handles HS256 and ES256 alike) ──────────
-    try:
-        user_resp = admin_client.auth.get_user(token)
-        user_id: Optional[str] = user_resp.user.id if user_resp and user_resp.user else None
-    except Exception as exc:
+    # Retry once on connection errors (HTTP/2 stream termination can cause
+    # transient failures when many requests happen concurrently).
+    user_id: Optional[str] = None
+    last_exc: Optional[Exception] = None
+    for _attempt in range(2):
+        try:
+            user_resp = admin_client.auth.get_user(token)
+            user_id = user_resp.user.id if user_resp and user_resp.user else None
+            break  # success – exit the retry loop
+        except Exception as exc:
+            last_exc = exc
+            err_lower = str(exc).lower()
+            # Retry only for transient connection / protocol errors
+            if any(kw in err_lower for kw in ("connection", "protocol", "terminated", "stream")):
+                import time
+                time.sleep(0.05)
+                continue
+            break  # non-connection error – no point retrying
+
+    if last_exc is not None and user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        ) from last_exc
 
     if not user_id:
         raise HTTPException(

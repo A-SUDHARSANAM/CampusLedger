@@ -56,16 +56,21 @@ export function LabProcurementPage() {
       setStatus(t('atLeastOneRequirement', 'Add at least one requirement to cart.'));
       return;
     }
-    await api.createProcurementRequest('lab', {
-      requestedByLabId: user.labId,
-      category,
-      notes,
-      items: buildItems()
-    });
-    setCart([]);
-    setNotes('');
-    setStatus(t('requirementSubmitted', 'Requirement request submitted to admin.'));
-    await load();
+    setStatus('');
+    try {
+      await api.createProcurementRequest('lab', {
+        requestedByLabId: user.labId,
+        category,
+        notes,
+        items: buildItems()
+      });
+      setCart([]);
+      setNotes('');
+      setStatus(t('requirementSubmitted', 'Requirement request submitted to admin.'));
+      await load();
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : t('submitFailed', 'Failed to submit request. Please try again.'));
+    }
   }
 
   const catalogColumns: TableColumn<ElectronicsCatalogItem>[] = useMemo(
@@ -134,7 +139,7 @@ export function LabProcurementPage() {
           </div>
         ))}
       </section>
-      {status ? <p className="settings-status">{status}</p> : null}
+      {status ? <p className="settings-status" style={{ color: status.toLowerCase().includes('fail') || status.toLowerCase().includes('error') || status.toLowerCase().includes('try again') ? 'var(--danger)' : undefined }}>{status}</p> : null}
 
       <DataTable data={catalog} columns={catalogColumns} title={t('requirementCatalog', 'Requirement Catalog')} subtitle={t('requirementCatalogDesc', 'Electronics and service entries for requisition')} />
       <DataTable data={requests} columns={requestColumns} title={t('myRequests', 'My Requests')} subtitle={t('myRequestsDesc', 'Track approval and vendor status from admin')} />

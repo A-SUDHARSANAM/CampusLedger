@@ -106,3 +106,28 @@ def decode_qr_payload(qr_base64: str) -> dict:
         )
     except Exception as exc:
         raise ValueError(f"Failed to decode QR code: {exc}") from exc
+
+
+def generate_maintenance_qr(issue_id: str, asset_id: str, staff_id: str) -> str:
+    """
+    Generate a maintenance-verification QR code for a specific repair assignment.
+
+    Encodes a JSON payload with ``issue_id``, ``asset_id``, and
+    ``assigned_staff_id`` into a base64 PNG QR code.  The service staff
+    scans this code after completing the repair; the backend uses all three
+    fields to verify the scan before marking the request as completed.
+
+    Parameters
+    ----------
+    issue_id : str
+        UUID of the ``maintenance_requests`` row.
+    asset_id : str
+        UUID of the asset being repaired.
+    staff_id : str
+        UUID of the service staff member assigned to this request.
+    """
+    return generate_qr_b64({
+        "issue_id":          issue_id,
+        "asset_id":          asset_id,
+        "assigned_staff_id": staff_id,
+    })

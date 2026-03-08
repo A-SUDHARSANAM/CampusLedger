@@ -53,7 +53,9 @@ class PurchaseOut(BaseModel):
 class PurchaseRequestIn(BaseModel):
     item_name: str
     quantity: int = 1
+    estimated_cost: Optional[float] = None
     notes: Optional[str] = None
+    lab_id: Optional[str] = None
 
 
 class OrderIn(BaseModel):
@@ -135,11 +137,20 @@ def raise_request(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_lab_tech),
 ):
-    data = {
+    data: dict = {
         "item_name":    payload.item_name,
         "quantity":     payload.quantity,
         "requested_by": current_user["id"],
     }
+    # Store optional enrichment fields when the migration has been applied
+    if payload.estimated_cost is not None:
+        data["estimated_cost"] = payload.estimated_cost
+    if payload.notes:
+        data["notes"] = payload.notes
+    # Use lab_id from payload (sent by frontend) or fall back to user's lab_id
+    lab_id = payload.lab_id or current_user.get("lab_id")
+    if lab_id:
+        data["lab_id"] = lab_id
     result = sb.table("purchase_requests").insert(data).execute()
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create purchase request")

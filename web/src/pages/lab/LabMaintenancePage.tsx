@@ -3,7 +3,7 @@ import { QrCode, ScanLine, Wrench, X } from 'lucide-react';
 import { DataList, DataTable, type ListItem, type TableColumn } from '../../components/tables';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
-import type { Asset, MaintenanceRequest, Priority } from '../../types/domain';
+import type { Asset, LocationInfo, MaintenanceRequest, Priority } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
 
 const PRIORITIES: Priority[] = ['Low', 'Medium', 'High'];
@@ -15,19 +15,29 @@ export function LabMaintenancePage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [statusMessage, setStatusMessage] = useState('');
 
+  // Locations list (for modal)
+  const [locationsList, setLocationsList] = useState<LocationInfo[]>([]);
+
   // Report Issue modal
   const [showModal, setShowModal] = useState(false);
+  const [modalLocationId, setModalLocationId] = useState('');
+  const [modalLocationAssets, setModalLocationAssets] = useState<{ id: string; name: string; assetCode?: string }[]>([]);
+  const [modalLoadingAssets, setModalLoadingAssets] = useState(false);
   const [modalAssetId, setModalAssetId] = useState('');
   const [modalIssue, setModalIssue] = useState('');
   const [modalPriority, setModalPriority] = useState<Priority>('Medium');
+  const [modalIssueType, setModalIssueType] = useState<'service_request' | 'purchase_request'>('service_request');
   const [modalError, setModalError] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
 
+  // QR code viewer
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [qrModalCode, setQrModalCode] = useState('');
+
   async function loadData() {
-    if (!user?.labId) return;
     const [assetRows, maintenanceRows] = await Promise.all([
-      api.getAssets('lab', user.labId),
-      api.getMaintenanceRequests('lab', user.labId)
+      api.getAssets('lab', user?.labId),
+      api.getMaintenanceRequests('lab', user?.labId)
     ]);
     setAssets(assetRows);
     setRequests(maintenanceRows);
@@ -35,12 +45,29 @@ export function LabMaintenancePage() {
 
   useEffect(() => {
     loadData();
+    api.getLocations().then(setLocationsList).catch(() => {});
   }, [user?.labId]);
 
+  // When location changes in modal, load assets for that location
+  useEffect(() => {
+    if (!modalLocationId) { setModalLocationAssets([]); setModalAssetId(''); return; }
+    setModalLoadingAssets(true);
+    api.getLocationAssets(modalLocationId)
+      .then((rows) => {
+        setModalLocationAssets(rows);
+        setModalAssetId(rows[0]?.id ?? '');
+      })
+      .catch(() => setModalLocationAssets([]))
+      .finally(() => setModalLoadingAssets(false));
+  }, [modalLocationId]);
+
   function openModal() {
-    setModalAssetId(assets[0]?.id ?? '');
+    const firstLoc = locationsList[0]?.id ?? '';
+    setModalLocationId(firstLoc);
+    setModalAssetId('');
     setModalIssue('');
     setModalPriority('Medium');
+    setModalIssueType('service_request');
     setModalError('');
     setShowModal(true);
   }
@@ -49,15 +76,15 @@ export function LabMaintenancePage() {
     e.preventDefault();
     if (!modalIssue.trim()) { setModalError(t('issueRequired', 'Please describe the issue.')); return; }
     if (!modalAssetId) { setModalError(t('assetRequired', 'Please select an asset.')); return; }
-    if (!user?.labId) return;
     setModalError('');
     setModalSaving(true);
     try {
       await api.raiseMaintenanceRequest('lab', {
         assetId: modalAssetId,
-        labId: user.labId,
+        labId: user?.labId ?? '',
         issue: modalIssue.trim(),
-        priority: modalPriority
+        priority: modalPriority,
+        issueType: modalIssueType,
       });
       setShowModal(false);
       setStatusMessage(t('maintenanceRequestCreated', 'Maintenance request submitted.'));
@@ -96,9 +123,35 @@ export function LabMaintenancePage() {
       { key: 'assetCode', header: t('assetCode', 'Asset Code') },
       { key: 'assetName', header: t('asset', 'Asset') },
       { key: 'issue', header: t('issue', 'Issue') },
+      {
+        key: 'issueType',
+        header: t('issueType', 'Type'),
+        render: (value) => {
+          const v = String(value ?? 'service_request');
+          return v === 'purchase_request'
+            ? <span className="ri-type-badge ri-type-purchase">Purchase Request</span>
+            : <span className="ri-type-badge ri-type-service">Service Request</span>;
+        },
+      },
       { key: 'labName', header: t('reportedBy', 'Reported By') },
       { key: 'status', header: t('status', 'Status') },
-      { key: 'priority', header: t('priority', 'Priority') }
+      { key: 'priority', header: t('priority', 'Priority') },
+      {
+        key: 'qrCode',
+        header: t('qrCode', 'QR Code'),
+        render: (_value, row) =>
+          row.qrCode ? (
+            <button
+              className="btn secondary-btn mini-btn"
+              type="button"
+              onClick={() => { setQrModalCode(row.qrCode!); setQrModalVisible(true); }}
+            >
+              <QrCode size={14} /> {t('viewQR', 'View QR')}
+            </button>
+          ) : (
+            <span style={{ color: '#94a3b8', fontSize: '0.85em' }}>—</span>
+          ),
+      }
     ],
     [t]
   );
@@ -114,7 +167,6 @@ export function LabMaintenancePage() {
           className="btn primary-btn page-action-primary"
           type="button"
           onClick={openModal}
-          disabled={assets.length === 0}
         >
           <Wrench size={15} /> {t('reportIssue', 'Report Issue')}
         </button>
@@ -141,6 +193,30 @@ export function LabMaintenancePage() {
       <DataTable data={requests} columns={columns} title={t('maintenanceLog', 'Maintenance Log')} subtitle={t('maintenanceLogDesc', 'Lab request history and current statuses')} />
       <DataList items={historyItems} title={t('maintenanceHistory', 'Maintenance History')} subtitle={t('maintenanceHistoryDesc', 'Status timeline for all requests')} />
 
+      {/* ── QR Code Viewer Modal ───────────────────────────── */}
+      {qrModalVisible && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setQrModalVisible(false)}>
+          <div className="modal-box" style={{ maxWidth: 360, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><QrCode size={16} style={{ marginRight: 6 }} />{t('maintenanceQRTitle', 'Maintenance QR Code')}</h3>
+              <button className="modal-close-btn" type="button" onClick={() => setQrModalVisible(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ padding: '16px 0' }}>
+              <img
+                src={`data:image/png;base64,${qrModalCode}`}
+                alt={t('maintenanceQRAlt', 'Maintenance QR Code')}
+                style={{ width: 240, height: 240, display: 'block', margin: '0 auto', borderRadius: 8, border: '1px solid #e2e8f0' }}
+              />
+              <p style={{ marginTop: 12, fontSize: '0.875rem', color: '#64748b' }}>
+                {t('qrScanInstructions', 'Show this QR code to the assigned service staff to confirm repair completion.')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Report Issue Modal ─────────────────────────────── */}
       {showModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowModal(false)}>
@@ -153,15 +229,68 @@ export function LabMaintenancePage() {
             </div>
             <form onSubmit={handleSubmitReport} className="modal-form">
               <label className="form-label">
+                {t('issueType', 'Issue Type')} *
+                <div className="ri-type-toggle">
+                  <button
+                    type="button"
+                    className={`ri-type-opt${modalIssueType === 'service_request' ? ' ri-type-opt-active' : ''}`}
+                    onClick={() => setModalIssueType('service_request')}
+                  >
+                    🔧 Service Request
+                  </button>
+                  <button
+                    type="button"
+                    className={`ri-type-opt${modalIssueType === 'purchase_request' ? ' ri-type-opt-active' : ''}`}
+                    onClick={() => setModalIssueType('purchase_request')}
+                  >
+                    🛒 Purchase Request
+                  </button>
+                </div>
+                <p className="ri-type-hint">
+                  {modalIssueType === 'service_request'
+                    ? 'Report a repair or maintenance need for an existing asset.'
+                    : 'Request procurement of a new asset or replacement part.'}
+                </p>
+              </label>
+              <label className="form-label">
+                {t('selectLocation', 'Location')} *
+                <select
+                  className="input"
+                  value={modalLocationId}
+                  onChange={(e) => { setModalLocationId(e.target.value); setModalAssetId(''); }}
+                  required
+                >
+                  <option value="">{t('selectLocationPlaceholder', '— Select location —')}</option>
+                  {['academic', 'non_academic'].map((type) => {
+                    const group = locationsList.filter((l) => l.type === type);
+                    if (!group.length) return null;
+                    return (
+                      <optgroup key={type} label={type === 'academic' ? 'Academic' : 'Non-Academic'}>
+                        {group.map((loc) => (
+                          <option key={loc.id} value={loc.id}>{loc.name}</option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </label>
+              <label className="form-label">
                 {t('selectAsset', 'Asset')} *
                 <select
                   className="input"
                   value={modalAssetId}
                   onChange={(e) => setModalAssetId(e.target.value)}
                   required
+                  disabled={!modalLocationId || modalLoadingAssets}
                 >
-                  <option value="">{t('selectAssetPlaceholder', '— Select asset —')}</option>
-                  {assets.map((a) => (
+                  <option value="">
+                    {modalLoadingAssets
+                      ? t('loadingAssets', 'Loading assets…')
+                      : !modalLocationId
+                      ? t('selectLocationFirst', '— Select a location first —')
+                      : t('selectAssetPlaceholder', '— Select asset —')}
+                  </option>
+                  {modalLocationAssets.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} {a.assetCode ? `(${a.assetCode})` : ''}
                     </option>

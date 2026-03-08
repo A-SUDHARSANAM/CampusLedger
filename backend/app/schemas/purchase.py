@@ -62,7 +62,7 @@ class PurchaseOrderUpdate(BaseModel):
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[date] = None
     total_amount: Optional[Decimal] = None
-    status: Optional[PurchaseOrderStatus] = None
+    status: Optional[str] = None
     rejection_reason: Optional[str] = None
 
 

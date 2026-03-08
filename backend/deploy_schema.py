@@ -59,6 +59,13 @@ DEPLOY_ORDER = [
 
     # 11. Indexes (must be last)
     "queries/schemas/indexes.sql",
+
+    # 12. Migrations (additive, safe to re-run)
+    "queries/migrations/001_stock_extra_cols.sql",
+    "queries/migrations/002_student_borrows.sql",
+    "queries/migrations/003_purchase_requests_extra_cols.sql",
+    "queries/migrations/004_student_queries.sql",
+    "queries/migrations/005_maintenance_issue_type.sql",
 ]
 
 

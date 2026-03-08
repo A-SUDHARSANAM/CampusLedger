@@ -49,10 +49,7 @@ def notify(
     """Send a single notification to one user."""
     _insert(sb, [{
         "user_id":  user_id,
-        "title":    title,
-        "message":  message,
-        "type":     notif_type,
-        "is_read":  False,
+        "message":  f"{title}: {message}" if title else message,
     }])
 
 
@@ -64,9 +61,9 @@ def notify_many(
     notif_type: str = "info",
 ) -> None:
     """Send the same notification to multiple users."""
+    combined = f"{title}: {message}" if title else message
     _insert(sb, [
-        {"user_id": uid, "title": title, "message": message,
-         "type": notif_type, "is_read": False}
+        {"user_id": uid, "message": combined}
         for uid in user_ids
     ])
 
