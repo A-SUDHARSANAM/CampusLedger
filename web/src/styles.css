@@ -231,7 +231,7 @@ button { font-family: inherit; }
 .role-pill.admin   { background: linear-gradient(135deg,#4F6EF7,#7C3AED); }
 .role-pill.lab     { background: linear-gradient(135deg,#22C55E,#16A34A); }
 .role-pill.service { background: linear-gradient(135deg,#F59E0B,#EF4444); }
-.role-pill.vendor  { background: linear-gradient(135deg,#EC4899,#8B5CF6); }
+.role-pill.purchase_dept  { background: linear-gradient(135deg,#EC4899,#8B5CF6); }
 
 .input,
 .select {
@@ -448,6 +448,7 @@ button { font-family: inherit; }
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .issue-modal-panel {
   width: 100%;

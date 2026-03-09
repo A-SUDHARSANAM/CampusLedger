@@ -41,82 +41,47 @@ else:
 # ---------------------------------------------------------------------------
 print("\nSeeding electronics catalog (stock table)...")
 
+# reorder_level = minimum on-hand quantity before a reorder is triggered
+# quantities chosen to produce deliberate variation: ~4 items below threshold
 catalog_items = [
-    {
-        "item_name": "Arduino Uno R3",
-        "category": "Microcontroller",
-        "quantity": 40,
-        "reorder_level": 1200,  # unit price in Rs. (stored in reorder_level)
-    },
-    {
-        "item_name": "Ultrasonic Sensor HC-SR04",
-        "category": "Sensor",
-        "quantity": 150,
-        "reorder_level": 180,
-    },
-    {
-        "item_name": "L298N Motor Driver",
-        "category": "Motor Driver",
-        "quantity": 70,
-        "reorder_level": 320,
-    },
-    {
-        "item_name": "Raspberry Pi 5",
-        "category": "Embedded Board",
-        "quantity": 15,
-        "reorder_level": 7600,
-    },
-    {
-        "item_name": "16x2 LCD Display",
-        "category": "Display",
-        "quantity": 60,
-        "reorder_level": 250,
-    },
-    {
-        "item_name": "Jumper Wires (40-pack)",
-        "category": "Cables & Connectors",
-        "quantity": 200,
-        "reorder_level": 90,
-    },
-    {
-        "item_name": "Breadboard 830-pt",
-        "category": "Prototyping",
-        "quantity": 80,
-        "reorder_level": 150,
-    },
-    {
-        "item_name": "DHT11 Temperature & Humidity Sensor",
-        "category": "Sensor",
-        "quantity": 100,
-        "reorder_level": 130,
-    },
-    {
-        "item_name": "ESP32 Wi-Fi Module",
-        "category": "Microcontroller",
-        "quantity": 35,
-        "reorder_level": 950,
-    },
-    {
-        "item_name": "Resistor Kit (600-pack)",
-        "category": "Passive Components",
-        "quantity": 50,
-        "reorder_level": 200,
-    },
+    # name, category, quantity, reorder_level
+    # ── SAFE (stock > threshold) ──
+    {"item_name": "Arduino Uno R3",                    "category": "Microcontroller",      "quantity": 40,  "reorder_level": 15},
+    {"item_name": "Ultrasonic Sensor HC-SR04",         "category": "Sensor",               "quantity": 150, "reorder_level": 50},
+    {"item_name": "L298N Motor Driver",                "category": "Motor Driver",          "quantity": 70,  "reorder_level": 25},
+    {"item_name": "16x2 LCD Display",                 "category": "Display",              "quantity": 60,  "reorder_level": 25},
+    {"item_name": "Jumper Wires (40-pack)",            "category": "Cables & Connectors",  "quantity": 200, "reorder_level": 60},
+    {"item_name": "Resistor Kit (600-pack)",           "category": "Passive Components",   "quantity": 50,  "reorder_level": 20},
+    # ── REORDER NEEDED (stock < threshold) ──
+    {"item_name": "Raspberry Pi 5",                   "category": "Embedded Board",       "quantity": 8,   "reorder_level": 20},
+    {"item_name": "Breadboard 830-pt",                "category": "Prototyping",           "quantity": 18,  "reorder_level": 30},
+    {"item_name": "DHT11 Temperature & Humidity Sensor", "category": "Sensor",            "quantity": 12,  "reorder_level": 35},
+    {"item_name": "ESP32 Wi-Fi Module",               "category": "Microcontroller",      "quantity": 35,  "reorder_level": 40},
 ]
 
 seeded_stock_ids = {}
 for item in catalog_items:
-    # Skip if already seeded (match by sku)
     existing = (
         sb.table("stock")
-        .select("id, item_name")
+        .select("id, item_name, reorder_level")
         .eq("item_name", item["item_name"])
         .limit(1)
         .execute()
     )
     if existing.data:
-        seeded_stock_ids[item["item_name"]] = existing.data[0]["id"]
-        print(f"  (already exists) {item['item_name']}")
+        rec = existing.data[0]
+        seeded_stock_ids[item["item_name"]] = rec["id"]
+        old_rl = rec.get("reorder_level", 0)
+        # Update if the reorder_level was previously stored as a price (>500)
+        # or simply differs from the correct value
+        if old_rl != item["reorder_level"]:
+            sb.table("stock").update({
+                "quantity":      item["quantity"],
+                "reorder_level": item["reorder_level"],
+            }).eq("id", rec["id"]).execute()
+            print(f"  ↻ {item['item_name']}  reorder_level {old_rl} → {item['reorder_level']}")
+        else:
+            print(f"  (ok) {item['item_name']}")
         continue
 
     row = dict(item)
@@ -126,11 +91,9 @@ for item in catalog_items:
     result = sb.table("stock").insert(row).execute()
     if result.data:
         seeded_stock_ids[item["item_name"]] = result.data[0]["id"]
-        print(f"  + {item['item_name']} (qty={item['quantity']})"
-    )
+        print(f"  + {item['item_name']} (qty={item['quantity']}, reorder_level={item['reorder_level']})")
     else:
-        print(f"  FAILED: {item['item_name']}"
-    )
+        print(f"  FAILED: {item['item_name']}")
 
 print(f"  Catalog seeding done. {len(seeded_stock_ids)} items available.")
 

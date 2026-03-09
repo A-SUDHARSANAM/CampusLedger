@@ -10,7 +10,7 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: 'admin',        label: 'Administrator'  },
   { value: 'lab',          label: 'Lab Incharge/Professor' },
   { value: 'service',      label: 'Service Staff'  },
-  { value: 'purchase_dept',label: 'Vendor'         },
+  { value: 'purchase_dept',label: 'Purchase Department' },
 ];
 
 const RANK_MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];

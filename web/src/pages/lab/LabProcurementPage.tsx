@@ -99,7 +99,7 @@ export function LabProcurementPage() {
       { key: 'category', header: t('type', 'Type') },
       { key: 'createdDate', header: t('date', 'Date') },
       { key: 'status', header: t('status', 'Status') },
-      { key: 'vendorName', header: t('vendor', 'Vendor'), render: (value) => String(value ?? '-') }
+      { key: 'purchaseDepartmentName', header: t('purchaseDepartment', 'Purchase Department'), render: (value) => String(value ?? '-') }
     ],
     [t]
   );

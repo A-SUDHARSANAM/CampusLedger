@@ -64,7 +64,7 @@ export function AdminProcurementPage() {
 
   async function handlePlaceOrder(row: ProcurementRequest) {
     try {
-      await api.sendProcurementToVendor('admin', row.id, 'Campus Vendor Partner');
+      await api.sendProcurementToPurchaseDept('admin', row.id, 'Campus Purchase Department');
       setStatusMsg(t('orderPlaced', 'Order placed.'));
       await load();
     } catch { setStatusMsg(t('actionFailed', 'Action failed.')); }
@@ -100,7 +100,7 @@ export function AdminProcurementPage() {
       { key: 'category', header: t('category', 'Category') },
       { key: 'createdDate', header: t('date', 'Date') },
       { key: 'status', header: t('status', 'Status') },
-      { key: 'vendorName', header: t('vendor', 'Vendor'), render: (value) => String(value ?? '-') },
+      { key: 'purchaseDepartmentName', header: t('purchaseDepartment', 'Purchase Department'), render: (value) => String(value ?? '-') },
       {
         key: 'id',
         header: t('actions', 'Actions'),
@@ -121,7 +121,7 @@ export function AdminProcurementPage() {
                 {t('placeOrder', 'Place Order')}
               </button>
             )}
-            {row.status === 'Sent to Vendor' && (
+            {row.status === 'Sent to Purchase Dept' && (
               <button className="btn secondary-btn mini-btn" type="button" onClick={() => handleConfirmPayment(row)}>
                 {t('confirmPayment', 'Confirm Payment')}
               </button>

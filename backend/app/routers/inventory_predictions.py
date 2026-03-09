@@ -26,6 +26,7 @@ from supabase import Client
 
 from app.db.supabase import get_admin_client
 from app.routers.auth_routes import require_role
+from app.services.notification_service import notify_reorder_alert
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ SAFETY_STOCK = 10  # fixed buffer added to predicted demand to get reorder level
 # ---------------------------------------------------------------------------
 
 class PredictDemandResponse(BaseModel):
-    item_id: int
+    item_id: str
     predicted_demand: float = Field(description="ML forecast for the requested month")
     reorder_level: float    = Field(description="predicted_demand + safety_stock (10)")
     reorder_alert: bool     = Field(description="True when current_stock < reorder_level")
@@ -67,7 +68,7 @@ class PredictDemandResponse(BaseModel):
 
 
 class InventoryPredictionItem(BaseModel):
-    item_id: int
+    item_id: str
     item_name: str
     current_stock: int
     predicted_demand: float
@@ -86,23 +87,32 @@ def _next_month() -> int:
     return (m % 12) + 1
 
 
-def _predict(month: int, item_id: int) -> float:
+def _to_int_id(item_id: str) -> int:
+    """Convert a string/UUID item_id to a stable positive integer for the ML model."""
+    try:
+        return int(item_id)
+    except (ValueError, TypeError):
+        # UUID or arbitrary string: use abs(hash) mod a prime so it stays in model range
+        return (abs(hash(str(item_id))) % 997) + 1
+
+
+def _predict(month: int, item_id: str) -> float:
     """
     Thin wrapper around the ML module so the router stays import-error-safe.
     If scikit-learn / joblib aren't installed yet the heuristic fallback kicks in.
     """
     try:
         from ml.predict_demand import predict_demand
-        return predict_demand(month, item_id)
+        return predict_demand(month, _to_int_id(item_id))
     except Exception as exc:
         _logger.warning("predict_demand import/call failed (item=%s): %s", item_id, exc)
         # last-resort numeric heuristic
-        base = 12 + (item_id % 8) * 3
+        base = 12 + (_to_int_id(item_id) % 8) * 3
         return round(base * (1.2 if month in (3, 6, 9, 12) else 1.0), 1)
 
 
 def _build_row(
-    item_id: int,
+    item_id: str,
     item_name: str,
     current_stock: int,
     month: int,
@@ -133,7 +143,7 @@ def _build_row(
 )
 def predict_demand_endpoint(
     month: int = Query(..., ge=1, le=12, description="Target month (1–12)"),
-    item_id: int = Query(..., ge=1, description="Inventory item ID"),
+    item_id: str = Query(..., description="Inventory item ID (integer or UUID)"),
     current_stock: int = Query(..., ge=0, description="Current stock on hand"),
     _user: dict = Depends(_require_any),
 ):
@@ -219,7 +229,7 @@ def bulk_predictions(
                 raw_name = str(cat.get("category_name") or f"Category {idx}")
                 cname    = raw_name.replace("_", " ").replace("-", " ").title()
                 current_stock = stock_per_cat.get(cid, 0)
-                results.append(_build_row(idx, cname, current_stock, target_month))
+                results.append(_build_row(cid, cname, current_stock, target_month))
 
             _logger.info(
                 "bulk_predictions: %d categories from DB, %d with stock",
@@ -228,6 +238,47 @@ def bulk_predictions(
             )
     except Exception as exc:
         _logger.warning("Could not fetch asset categories from DB: %s", exc)
+
+    # ── Strategy 1b: consumable stock items from the `stock` table ─────────
+    # These are individual lab consumables (Arduino, sensors, cables, etc.).
+    # Their explicit reorder_level is preferred over the ML-only fallback;
+    # values > 500 are treated as stale price data and ignored.
+    try:
+        stock_rows = (
+            sb.table("stock")
+            .select("id, item_name, quantity, reorder_level")
+            .order("item_name")
+            .execute()
+            .data or []
+        )
+        existing_ids = {r.item_id for r in results}
+        for sr in stock_rows:
+            sid = str(sr["id"])
+            if sid in existing_ids:
+                continue
+            sname         = str(sr.get("item_name") or "Stock Item")
+            current_stock = int(sr.get("quantity") or 0)
+            explicit_min  = int(sr.get("reorder_level") or 0)
+            # Sanity cap: values > 500 were likely entered as prices, not quantities
+            if explicit_min > 500:
+                explicit_min = 0
+            predicted        = _predict(target_month, sid)
+            effective_reorder = max(float(explicit_min), predicted + SAFETY_STOCK)
+            reorder_alert    = current_stock < effective_reorder
+            suggested        = max(0, int(effective_reorder) - current_stock) if reorder_alert else 0
+            results.append(InventoryPredictionItem(
+                item_id=sid,
+                item_name=sname,
+                current_stock=current_stock,
+                predicted_demand=round(predicted, 1),
+                reorder_level=round(effective_reorder, 1),
+                reorder_alert=reorder_alert,
+                suggested_order=suggested,
+            ))
+        if stock_rows:
+            _logger.info("bulk_predictions: added %d stock items", len(stock_rows))
+    except Exception as exc:
+        _logger.warning("Could not fetch stock items: %s", exc)
 
     # ── Strategy 2: inventory_usage_history ────────────────────────────────
     if not results:
@@ -238,13 +289,13 @@ def bulk_predictions(
                 .execute()
                 .data or []
             )
-            seen: dict[int, str] = {}
+            seen: dict[str, str] = {}
             for r in hist_rows:
-                iid = int(r["item_id"])
+                iid = str(r["item_id"])
                 if iid not in seen:
                     seen[iid] = str(r["item_name"])
             if seen:
-                seed_stock = {iid: istock for iid, _, istock in _SEED_ITEMS}
+                seed_stock = {str(iid): istock for iid, _, istock in _SEED_ITEMS}
                 for item_id, item_name in seen.items():
                     results.append(_build_row(item_id, item_name,
                                               seed_stock.get(item_id, 20),
@@ -256,8 +307,54 @@ def bulk_predictions(
     if not results:
         _logger.info("bulk_predictions: using seed item fallback")
         for iid, iname, istock in _SEED_ITEMS:
-            results.append(_build_row(iid, iname, istock, target_month))
+            results.append(_build_row(str(iid), iname, istock, target_month))
 
     # Sort: items needing reorder first, then by largest suggested order
     results.sort(key=lambda r: (not r.reorder_alert, -r.suggested_order))
     return results
+
+
+# ---------------------------------------------------------------------------
+# POST /inventory/reorder-alert  — trigger notification to purchase dept
+# ---------------------------------------------------------------------------
+
+class ReorderAlertIn(BaseModel):
+    item_id: str
+    item_name: str
+    current_stock: int
+    suggested_order: int
+    reorder_level: float
+
+
+class ReorderAlertOut(BaseModel):
+    ok: bool
+    message: str
+
+
+@router.post(
+    "/inventory/reorder-alert",
+    response_model=ReorderAlertOut,
+    summary="Trigger a reorder notification to the purchase department",
+)
+def trigger_reorder_alert(
+    payload: ReorderAlertIn,
+    sb: Client = Depends(get_admin_client),
+    user: dict = Depends(_require_any),
+):
+    """
+    Called when an admin clicks the Reorder button on the Inventory
+    Intelligence page.  Sends a notification to all purchase_dept users
+    and all admins so they can raise a purchase request.
+    """
+    notify_reorder_alert(
+        sb,
+        item_name=payload.item_name,
+        current_stock=payload.current_stock,
+        suggested_order=payload.suggested_order,
+        reorder_level=payload.reorder_level,
+        triggered_by=user.get("id"),
+    )
+    return ReorderAlertOut(
+        ok=True,
+        message=f"Reorder alert sent to purchase department for '{payload.item_name}'.",
+    )

@@ -23,22 +23,22 @@ import qrcode
 from qrcode.image.pil import PilImage
 
 
-def generate_qr_b64(payload: dict) -> str:
+def generate_qr_b64(payload) -> str:
     """
-    Encode *payload* as JSON, create a QR code PNG, and return it
-    as a base64 string suitable for embedding in a ``<img src="...">``
-    data-URI or sending over the API.
+    Encode *payload* (a URL string or a dict serialised to JSON) as a QR
+    code PNG and return it as a base64 string.
 
-    Example
-    -------
-    >>> qr_b64 = generate_qr_b64({
-    ...     "issue_id":          "uuid-123",
-    ...     "asset_id":          "uuid-456",
-    ...     "assigned_staff_id": "uuid-789",
-    ... })
-    >>> # Use in HTML: <img src="data:image/png;base64,{qr_b64}">
+    When *payload* is a **str** the value is embedded directly — this is the
+    preferred format for asset QR codes because phones and browsers can open
+    the URL immediately without any app-specific scanning logic.
+
+    When *payload* is a **dict** it is serialised to compact JSON first
+    (used for maintenance-workflow QR codes).
     """
-    json_data = json.dumps(payload, separators=(",", ":"))
+    if isinstance(payload, str):
+        data_str = payload
+    else:
+        data_str = json.dumps(payload, separators=(",", ":"))
 
     qr = qrcode.QRCode(
         version=None,           # auto-size
@@ -46,7 +46,7 @@ def generate_qr_b64(payload: dict) -> str:
         box_size=10,
         border=4,
     )
-    qr.add_data(json_data)
+    qr.add_data(data_str)
     qr.make(fit=True)
 
     img: PilImage = qr.make_image(fill_color="black", back_color="white")

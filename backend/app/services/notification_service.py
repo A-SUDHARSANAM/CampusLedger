@@ -278,3 +278,50 @@ def check_warranty_expiry(sb: Client, days_ahead: int = 30) -> int:
         )
 
     return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Reorder alert — sent to purchase_dept users + admins
+# ---------------------------------------------------------------------------
+
+def _purchase_dept_ids(sb: Client) -> list[str]:
+    """Return IDs of all active purchase_dept users."""
+    try:
+        role_res = sb.table("roles").select("id").eq("role_name", "purchase_dept").limit(1).execute()
+        if not role_res.data:
+            return []
+        role_id = role_res.data[0]["id"]
+        rows = sb.table("users").select("id").eq("role_id", role_id).eq("status", "active").execute().data or []
+        return [r["id"] for r in rows]
+    except Exception as exc:
+        logger.warning("Failed to fetch purchase_dept IDs: %s", exc)
+        return []
+
+
+def notify_reorder_alert(
+    sb: Client,
+    item_name: str,
+    current_stock: int,
+    suggested_order: int,
+    reorder_level: float,
+    triggered_by: Optional[str] = None,
+) -> None:
+    """
+    Triggered when an admin manually clicks 'Reorder' on the Inventory
+    Intelligence page.  Notifies all purchase_dept users + all admins.
+    """
+    title = f"Reorder Required: {item_name}"
+    message = (
+        f"'{item_name}' is critically low. "
+        f"Current stock: {current_stock} | Reorder level: {reorder_level} | "
+        f"Suggested order: +{suggested_order} units. "
+        f"Please raise a purchase request."
+    )
+    recipients = set(_purchase_dept_ids(sb))
+    recipients.update(_admin_ids(sb))
+    if triggered_by and triggered_by not in recipients:
+        recipients.add(triggered_by)
+    notify_many(sb, list(recipients), title, message, "reorder")
+    logger.info(
+        "Reorder alert sent for '%s' to %d recipients.", item_name, len(recipients)
+    )

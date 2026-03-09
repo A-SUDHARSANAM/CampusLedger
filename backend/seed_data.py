@@ -1,5 +1,5 @@
 """
-Seed script: adds realistic labs + departments + purchase orders + vendors to Supabase.
+Seed script: adds realistic labs + departments + purchase orders + purchase department entries to Supabase.
 Run once: python seed_data.py
 """
 import os, sys
@@ -67,29 +67,29 @@ for lab in labs_to_seed:
 
 print(f"  {seeded_labs} new labs inserted.")
 
-# ── 3. Vendors ────────────────────────────────────────────────────────────────
-print("Seeding vendors...")
-vendors_to_seed = [
-    {"vendor_name": "TechSupply India",    "contact_email": "sales@techsupply.in",   "phone": "9800001111", "rating": 5},
-    {"vendor_name": "LabEquip Co.",        "contact_email": "orders@labequip.com",   "phone": "9800002222", "rating": 4},
-    {"vendor_name": "EduTools Pvt Ltd",    "contact_email": "support@edutools.in",   "phone": "9800003333", "rating": 4},
-    {"vendor_name": "National Electronics","contact_email": "ne@natelectronics.in",  "phone": "9800004444", "rating": 3},
-    {"vendor_name": "Campus Furniture Co.","contact_email": "info@campusfurnish.com","phone": "9800005555", "rating": 4},
+# ── 3. Purchase Department entries ──────────────────────────────────────────
+print("Seeding purchase_department...")
+purchase_departments_to_seed = [
+    {"purchase_department_name": "TechSupply India",    "contact_email": "sales@techsupply.in",   "phone": "9800001111", "rating": 5},
+    {"purchase_department_name": "LabEquip Co.",        "contact_email": "orders@labequip.com",   "phone": "9800002222", "rating": 4},
+    {"purchase_department_name": "EduTools Pvt Ltd",    "contact_email": "support@edutools.in",   "phone": "9800003333", "rating": 4},
+    {"purchase_department_name": "National Electronics","contact_email": "ne@natelectronics.in",  "phone": "9800004444", "rating": 3},
+    {"purchase_department_name": "Campus Furniture Co.","contact_email": "info@campusfurnish.com","phone": "9800005555", "rating": 4},
 ]
-vendor_ids = {}
-seeded_vendors = 0
-for v in vendors_to_seed:
-    existing = sb.table("vendors").select("id").eq("contact_email", v["contact_email"]).limit(1).execute()
+purchase_department_ids = {}
+seeded_purchase_departments = 0
+for v in purchase_departments_to_seed:
+    existing = sb.table("purchase_department").select("id").eq("contact_email", v["contact_email"]).limit(1).execute()
     if existing.data:
-        vendor_ids[v["vendor_name"]] = existing.data[0]["id"]
-        print(f"  (already exists) {v['vendor_name']}")
+        purchase_department_ids[v["purchase_department_name"]] = existing.data[0]["id"]
+        print(f"  (already exists) {v['purchase_department_name']}")
         continue
-    new = sb.table("vendors").insert(v).execute()
+    new = sb.table("purchase_department").insert(v).execute()
     if new.data:
-        vendor_ids[v["vendor_name"]] = new.data[0]["id"]
-        seeded_vendors += 1
-        print(f"  + {v['vendor_name']}")
-print(f"  {seeded_vendors} new vendors inserted.")
+        purchase_department_ids[v["purchase_department_name"]] = new.data[0]["id"]
+        seeded_purchase_departments += 1
+        print(f"  + {v['purchase_department_name']}")
+print(f"  {seeded_purchase_departments} new purchase department entries inserted.")
 
 # ── 4. Purchase orders ────────────────────────────────────────────────────────
 # The backend purchase.py uses purchase_orders table with a flattened schema.
@@ -111,18 +111,18 @@ for u in (lab_tech_users.data or []):
 
 # Determine schema by checking existing columns from probe row or just try with known backend fields
 # The backend uses: item_name, item_description, quantity, estimated_cost, priority, notes,
-#                   requested_by_id, status, po_number, vendor_name, expected_delivery_date,
+#                   requested_by_id, status, po_number, purchase_department_name, expected_delivery_date,
 #                   actual_delivery_date, invoice_url, approved_by_id, ordered_by_id
 
 # ── purchase_requests uses actual DB schema ───────────────────────────────────
 # Columns: id, item_name, quantity, requested_by (UUID FK→users),
-#          admin_approval (bool), vendor_id (UUID FK→vendors),
+#          admin_approval (bool), purchase_department_id (UUID FK→purchase_department),
 #          payment_status (unpaid/pending/paid/refunded),
 #          order_status (pending/ordered/delivered/cancelled),
 #          delivery_date, created_at
 
-def get_vendor_id(name: str) -> str | None:
-    r = sb.table("vendors").select("id").ilike("vendor_name", name).limit(1).execute()
+def get_purchase_department_id(name: str) -> str | None:
+    r = sb.table("purchase_department").select("id").ilike("purchase_department_name", name).limit(1).execute()
     return r.data[0]["id"] if r.data else None
 
 PURCHASE_REQUESTS = [
@@ -166,7 +166,7 @@ PURCHASE_REQUESTS = [
         "quantity": 5,
         "requested_by": lab_tech_id or admin_id,
         "admin_approval": True,
-        "vendor_id": get_vendor_id("National Electronics"),
+        "purchase_department_id": get_purchase_department_id("National Electronics"),
         "order_status": "ordered",
         "payment_status": "unpaid",
         "delivery_date": "2026-03-25",
@@ -177,7 +177,7 @@ PURCHASE_REQUESTS = [
         "quantity": 50,
         "requested_by": lab_tech_id or admin_id,
         "admin_approval": True,
-        "vendor_id": get_vendor_id("Campus Furniture Co."),
+        "purchase_department_id": get_purchase_department_id("Campus Furniture Co."),
         "order_status": "ordered",
         "payment_status": "paid",
         "delivery_date": "2026-03-18",
@@ -188,7 +188,7 @@ PURCHASE_REQUESTS = [
         "quantity": 3,
         "requested_by": lab_tech_id or admin_id,
         "admin_approval": True,
-        "vendor_id": get_vendor_id("TechSupply India"),
+        "purchase_department_id": get_purchase_department_id("TechSupply India"),
         "order_status": "delivered",
         "payment_status": "paid",
         "delivery_date": "2026-03-01",
@@ -243,4 +243,4 @@ for cat in categories:
 print(f"  {cat_seeded} new categories added.")
 
 print("\n✓ Seeding complete!")
-print(f"  Labs: {len(lab_ids)} total  |  Vendors: {len(vendor_ids)} total  |  POs: {seeded_po} new")
+print(f"  Labs: {len(lab_ids)} total  |  Purchase Departments: {len(purchase_department_ids)} total  |  POs: {seeded_po} new")

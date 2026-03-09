@@ -21,9 +21,9 @@ _require_any           = require_role("admin", "lab_technician", "service_staff"
 
 # Actual DB tables used:
 #   purchase_requests(id, item_name, quantity, requested_by, admin_approval,
-#                     vendor_id, payment_status, order_status, delivery_date, created_at)
-#   purchase_orders  (id, request_id, vendor_id, payment_status, order_status, invoice_url, created_at)
-#   vendors          (id, vendor_name, contact_email, phone, rating, created_at)
+#                     purchase_department_id, payment_status, order_status, delivery_date, created_at)
+#   purchase_orders  (id, request_id, purchase_department_id, payment_status, order_status, invoice_url, created_at)
+#   purchase_department (id, purchase_department_name, contact_email, phone, rating, created_at)
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -34,13 +34,13 @@ class PurchaseOut(BaseModel):
     item_name: str
     quantity: int
     status: str                           # derived unified status string
-    vendor_name: Optional[str] = None
+    purchase_department_name: Optional[str] = None
     delivery_date: Optional[str] = None
     admin_approval: Optional[bool] = None
     order_status: Optional[str] = None
     payment_status: Optional[str] = None
     requested_by: Optional[str] = None
-    vendor_id: Optional[str] = None
+    purchase_department_id: Optional[str] = None
     invoice_url: Optional[str] = None
     created_at: Optional[str] = None
     # Compat aliases kept so adaptProcurement() keeps working
@@ -60,7 +60,7 @@ class PurchaseRequestIn(BaseModel):
 
 class OrderIn(BaseModel):
     request_id: str
-    vendor_name: str
+    purchase_department_name: str
     expected_delivery_date: str   # ISO date  YYYY-MM-DD
 
 
@@ -88,24 +88,24 @@ def _derive_status(row: dict) -> str:
     return "pending_review"
 
 
-def _enrich(row: dict, *, vendor_name: Optional[str] = None) -> dict:
-    """Add derived status + vendor_name to a purchase_requests row."""
+def _enrich(row: dict, *, purchase_department_name: Optional[str] = None) -> dict:
+    """Add derived status + purchase_department_name to a purchase_requests row."""
     row["status"] = _derive_status(row)
-    if vendor_name is not None:
-        row["vendor_name"] = vendor_name
-    elif "vendors" in row:
-        # Supabase embed: {"vendors": {"vendor_name": "..."}}
-        v = row.pop("vendors", None) or {}
-        row["vendor_name"] = v.get("vendor_name")
+    if purchase_department_name is not None:
+        row["purchase_department_name"] = purchase_department_name
+    elif "purchase_department" in row:
+        # Supabase embed: {"purchase_department": {"purchase_department_name": "..."}}
+        v = row.pop("purchase_department", None) or {}
+        row["purchase_department_name"] = v.get("purchase_department_name")
     return row
 
 
-def _get_or_create_vendor(sb: Client, vendor_name: str) -> str:
-    """Return vendor UUID, creating a new vendor record if needed."""
-    res = sb.table("vendors").select("id").ilike("vendor_name", vendor_name).limit(1).execute()
+def _get_or_create_purchase_department(sb: Client, purchase_department_name: str) -> str:
+    """Return purchase_department UUID, creating a new record if needed."""
+    res = sb.table("purchase_department").select("id").ilike("purchase_department_name", purchase_department_name).limit(1).execute()
     if res.data:
         return res.data[0]["id"]
-    new = sb.table("vendors").insert({"vendor_name": vendor_name}).execute()
+    new = sb.table("purchase_department").insert({"purchase_department_name": purchase_department_name}).execute()
     return new.data[0]["id"]
 
 
@@ -205,7 +205,7 @@ def admin_approve(
 
 # ---------------------------------------------------------------------------
 # POST /purchase/order
-#   Admin/purchase dept formalises an approved request: assigns vendor + marks ordered
+#   Admin/purchase dept formalises an approved request: assigns purchase_department + marks ordered
 # ---------------------------------------------------------------------------
 @router.post(
     "/order",
@@ -227,15 +227,15 @@ def create_order(
             detail="Only admin-approved requests can be converted to an order",
         )
 
-    vendor_id = _get_or_create_vendor(sb, payload.vendor_name)
+    purchase_department_id = _get_or_create_purchase_department(sb, payload.purchase_department_name)
     update = {
-        "vendor_id":    vendor_id,
+        "purchase_department_id": purchase_department_id,
         "order_status": "ordered",
         "delivery_date": payload.expected_delivery_date,
     }
     result = sb.table("purchase_requests").update(update).eq("id", payload.request_id).execute()
     row = result.data[0]
-    return _enrich(row, vendor_name=payload.vendor_name)
+    return _enrich(row, purchase_department_name=payload.purchase_department_name)
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +347,8 @@ def list_orders(
     sb: Client = Depends(get_admin_client),
     current_user: dict = Depends(_require_any),
 ):
-    # Fetch from purchase_requests with vendor name via join
-    q = sb.table("purchase_requests").select("*, vendors(vendor_name)").range(skip, skip + limit - 1).order("created_at", desc=True)
+    # Fetch from purchase_requests with purchase_department name via join
+    q = sb.table("purchase_requests").select("*, purchase_department(purchase_department_name)").range(skip, skip + limit - 1).order("created_at", desc=True)
 
     if current_user["role"] not in ("admin", "purchase_dept"):
         q = q.eq("requested_by", current_user["id"])

@@ -13,6 +13,12 @@ from app.routers.qr import router as qr_router
 from app.routers.student_queries import router as student_queries_router
 from app.routers.technician import router as technician_router
 from app.routers.inventory_predictions import router as inventory_predictions_router
+from app.routers.ocr import router as ocr_router
+from app.routers.digital_twin import router as digital_twin_router
+from app.routers.device_health import router as device_health_router
+from app.routers.blockchain import router as blockchain_router
+from app.routers.qr_tracking import router as qr_tracking_router
+from app.routers.rfid import router as rfid_router
 
 __all__ = [
     "auth_routes_router",
@@ -30,4 +36,10 @@ __all__ = [
     "student_queries_router",
     "technician_router",
     "inventory_predictions_router",
+    "ocr_router",
+    "digital_twin_router",
+    "device_health_router",
+    "blockchain_router",
+    "qr_tracking_router",
+    "rfid_router",
 ]

@@ -66,19 +66,19 @@ INSERT INTO asset_categories (category_name) VALUES
     ('furniture'),
     ('projectors');
 
--- ── queries/tables/vendors.sql ─────────────────────────────
+-- ── queries/tables/purchase_department.sql ─────────────────────────────
 -- ============================================================
--- CampusLedger — Vendors Table
+-- CampusLedger — Purchase Department Table
 -- Depends on: extensions.sql
 -- ============================================================
 
-CREATE TABLE vendors (
-    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    vendor_name    TEXT        NOT NULL,
-    contact_email  TEXT        UNIQUE,
-    phone          TEXT,
-    rating         INTEGER     CHECK (rating BETWEEN 1 AND 5),
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE purchase_department (
+    id                          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    purchase_department_name    TEXT        NOT NULL,
+    contact_email               TEXT        UNIQUE,
+    phone                       TEXT,
+    rating                      INTEGER     CHECK (rating BETWEEN 1 AND 5),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ── queries/tables/labs.sql ────────────────────────────────
@@ -191,18 +191,18 @@ CREATE TABLE maintenance_logs (
 -- ── queries/tables/purchase_requests.sql ───────────────────
 -- ============================================================
 -- CampusLedger — Purchase Requests Table
--- Depends on: extensions.sql, enums.sql, users, vendors
+-- Depends on: extensions.sql, enums.sql, users, purchase_department
 -- Workflow: request → admin_approval → purchase_dept processes
---           → vendor order → payment → delivery
+--           → purchase department order → payment → delivery
 -- ============================================================
 
 CREATE TABLE purchase_requests (
-    id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    item_name        TEXT         NOT NULL,
-    quantity         INTEGER      NOT NULL CHECK (quantity > 0),
-    requested_by     UUID         REFERENCES users (id) ON DELETE SET NULL,
-    admin_approval   BOOLEAN      NOT NULL DEFAULT FALSE,
-    vendor_id        UUID         REFERENCES vendors (id) ON DELETE SET NULL,
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_name                TEXT         NOT NULL,
+    quantity                 INTEGER      NOT NULL CHECK (quantity > 0),
+    requested_by             UUID         REFERENCES users (id) ON DELETE SET NULL,
+    admin_approval           BOOLEAN      NOT NULL DEFAULT FALSE,
+    purchase_department_id   UUID         REFERENCES purchase_department (id) ON DELETE SET NULL,
     payment_status   TEXT         NOT NULL DEFAULT 'unpaid'
                                   CHECK (payment_status IN ('unpaid', 'pending', 'paid', 'refunded')),
     order_status     TEXT         NOT NULL DEFAULT 'pending'
@@ -214,14 +214,14 @@ CREATE TABLE purchase_requests (
 -- ── queries/tables/purchase_orders.sql ─────────────────────
 -- ============================================================
 -- CampusLedger — Purchase Orders Table
--- Depends on: extensions.sql, enums.sql, purchase_requests, vendors
+-- Depends on: extensions.sql, enums.sql, purchase_requests, purchase_department
 -- A purchase order is created once admin approves a purchase request.
 -- ============================================================
 
 CREATE TABLE purchase_orders (
-    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-    request_id      UUID         NOT NULL REFERENCES purchase_requests (id) ON DELETE CASCADE,
-    vendor_id       UUID         REFERENCES vendors (id) ON DELETE SET NULL,
+    id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    request_id               UUID         NOT NULL REFERENCES purchase_requests (id) ON DELETE CASCADE,
+    purchase_department_id   UUID         REFERENCES purchase_department (id) ON DELETE SET NULL,
     payment_status  TEXT         NOT NULL DEFAULT 'unpaid'
                                  CHECK (payment_status IN ('unpaid', 'pending', 'paid', 'refunded')),
     order_status    TEXT         NOT NULL DEFAULT 'pending'
@@ -487,12 +487,12 @@ CREATE INDEX idx_maintenance_status       ON maintenance_requests (status);
 
 -- purchase_requests
 CREATE INDEX idx_purchase_req_requested_by  ON purchase_requests (requested_by);
-CREATE INDEX idx_purchase_req_vendor_id     ON purchase_requests (vendor_id);
-CREATE INDEX idx_purchase_req_order_status  ON purchase_requests (order_status);
+CREATE INDEX idx_purchase_req_purchase_department_id  ON purchase_requests (purchase_department_id);
+CREATE INDEX idx_purchase_req_order_status            ON purchase_requests (order_status);
 
 -- purchase_orders
-CREATE INDEX idx_purchase_orders_request_id  ON purchase_orders (request_id);
-CREATE INDEX idx_purchase_orders_vendor_id   ON purchase_orders (vendor_id);
+CREATE INDEX idx_purchase_orders_request_id               ON purchase_orders (request_id);
+CREATE INDEX idx_purchase_orders_purchase_department_id   ON purchase_orders (purchase_department_id);
 
 -- borrow_records
 CREATE INDEX idx_borrow_records_asset_id  ON borrow_records (asset_id);

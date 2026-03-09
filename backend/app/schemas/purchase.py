@@ -44,8 +44,8 @@ class PurchaseOrderItemResponse(PurchaseOrderItemBase):
 class PurchaseOrderBase(BaseModel):
     title: str
     description: Optional[str] = None
-    vendor_name: Optional[str] = None
-    vendor_contact: Optional[str] = None
+    purchase_department_name: Optional[str] = None
+    purchase_department_contact: Optional[str] = None
     expected_delivery_date: Optional[date] = None
     total_amount: Optional[Decimal] = None
 
@@ -57,8 +57,8 @@ class PurchaseOrderCreate(PurchaseOrderBase):
 class PurchaseOrderUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    vendor_name: Optional[str] = None
-    vendor_contact: Optional[str] = None
+    purchase_department_name: Optional[str] = None
+    purchase_department_contact: Optional[str] = None
     expected_delivery_date: Optional[date] = None
     actual_delivery_date: Optional[date] = None
     total_amount: Optional[Decimal] = None

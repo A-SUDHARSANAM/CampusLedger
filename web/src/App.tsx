@@ -23,6 +23,13 @@ import { ServiceTasksPage } from './pages/service/ServiceTasksPage';
 import { PurchaseDashboardPage } from './pages/purchase/PurchaseDashboardPage';
 import { PurchaseSmartProcurementPage } from './pages/purchase/PurchaseSmartProcurementPage';
 import { AdminInventoryIntelligencePage } from './pages/admin/AdminInventoryIntelligencePage';
+import { AdminDigitalTwinPage } from './pages/admin/AdminDigitalTwinPage';
+import { AdminDeviceMonitoringPage } from './pages/admin/AdminDeviceMonitoringPage';
+import { BlockchainAuditPage } from './pages/admin/BlockchainAuditPage';
+import AssetTrackingPage from './pages/admin/AssetTrackingPage';
+import PublicAssetPage from './pages/PublicAssetPage';
+import { LabDigitalTwinPage } from './pages/lab/LabDigitalTwinPage';
+import { LabDeviceMonitoringPage } from './pages/lab/LabDeviceMonitoringPage';
 import { LanguageProvider } from './context/LanguageContext';
 
 function App() {
@@ -32,6 +39,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/public/asset/:id" element={<PublicAssetPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route path="/" element={<Navigate to="/login" replace />} />
@@ -45,6 +53,10 @@ function App() {
               <Route path="maintenance" element={<AdminMaintenancePage />} />
               <Route path="reports" element={<AdminReportsPage />} />
               <Route path="inventory-intelligence" element={<AdminInventoryIntelligencePage />} />
+              <Route path="digital-twin" element={<AdminDigitalTwinPage />} />
+              <Route path="device-monitoring" element={<AdminDeviceMonitoringPage />} />
+              <Route path="blockchain" element={<BlockchainAuditPage />} />
+              <Route path="asset-tracking" element={<AssetTrackingPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 
@@ -53,6 +65,8 @@ function App() {
               <Route path="assets" element={<LabAssetsPage />} />
               <Route path="procurement" element={<LabProcurementPage />} />
               <Route path="maintenance" element={<LabMaintenancePage />} />
+              <Route path="digital-twin" element={<LabDigitalTwinPage />} />
+              <Route path="device-monitoring" element={<LabDeviceMonitoringPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 

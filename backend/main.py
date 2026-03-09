@@ -21,6 +21,12 @@ from app.routers import (
     student_queries_router,
     technician_router,
     inventory_predictions_router,
+    ocr_router,
+    digital_twin_router,
+    device_health_router,
+    blockchain_router,
+    qr_tracking_router,
+    rfid_router,
 )
 
 API_PREFIX = "/api/v1"
@@ -28,15 +34,22 @@ API_PREFIX = "/api/v1"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: verify Supabase connectivity + start monthly ML retrain scheduler."""
+    """Startup: verify Supabase connectivity + auto-migrate + start ML scheduler."""
     from app.db.supabase import supabase_admin
 
     try:
-        # Lightweight connectivity check — list up to 1 row from users
         supabase_admin.table("users").select("id").limit(1).execute()
     except Exception as exc:  # pragma: no cover
         import logging
         logging.getLogger("campusledger").warning("Supabase connectivity check failed: %s", exc)
+
+    # Auto-apply pending SQL migrations (uses psycopg2 if DATABASE_URL is set)
+    try:
+        from migrate import run_migrations
+        run_migrations()
+    except Exception as exc:
+        import logging
+        logging.getLogger("campusledger").warning("Auto-migration skipped (non-fatal): %s", exc)
 
     # Start background scheduler for monthly model retraining (non-blocking)
     try:
@@ -91,6 +104,12 @@ app.include_router(qr_router,               prefix=API_PREFIX)
 app.include_router(inventory_predictions_router, prefix=API_PREFIX)
 app.include_router(student_queries_router,  prefix=API_PREFIX)
 app.include_router(technician_router,        prefix=API_PREFIX)
+app.include_router(ocr_router,               prefix=API_PREFIX)
+app.include_router(digital_twin_router,      prefix=API_PREFIX)
+app.include_router(device_health_router,     prefix=API_PREFIX)
+app.include_router(blockchain_router,        prefix=API_PREFIX)
+app.include_router(qr_tracking_router,       prefix=API_PREFIX)
+app.include_router(rfid_router,              prefix=API_PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

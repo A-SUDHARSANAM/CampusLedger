@@ -1,4 +1,4 @@
-﻿from typing import List, Optional
+from typing import List, Optional
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -7,6 +7,7 @@ from supabase import Client
 
 from app.routers.auth_routes import require_role
 from app.db.supabase import get_admin_client
+from app.services.blockchain_service import record_event as _bc_record
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 
@@ -286,7 +287,17 @@ def create_asset(
     if asset.get("location_id"):
         locr = sb.table("locations").select("id, name, type").eq("id", asset["location_id"]).limit(1).execute()
         loc_map = {l["id"]: l for l in (locr.data or [])}
-    return _enrich_asset(asset, lab_map, cat_map, loc_map)
+    enriched = _enrich_asset(asset, lab_map, cat_map, loc_map)
+    # ── blockchain ────────────────────────────────────────────────────────
+    _bc_record(
+        sb,
+        asset_id=str(asset.get("id", "")),
+        asset_name=enriched.asset_name,
+        action="ASSET_CREATED",
+        performed_by="admin",
+        extra_data={"category": enriched.category, "lab": enriched.lab_name, "status": enriched.status},
+    )
+    return enriched
 
 
 # ---------------------------------------------------------------------------
@@ -366,19 +377,30 @@ def update_asset(
     if asset.get("location_id"):
         locr = sb.table("locations").select("id, name, type").eq("id", asset["location_id"]).limit(1).execute()
         loc_map = {l["id"]: l for l in (locr.data or [])}
-    return _enrich_asset(asset, lab_map, cat_map, loc_map)
-
-
-# ---------------------------------------------------------------------------
-# DELETE /assets/{asset_id}  (admin only)
-# ---------------------------------------------------------------------------
+    enriched = _enrich_asset(asset, lab_map, cat_map, loc_map)
+    # ── blockchain ────────────────────────────────────────────────────────
+    action = "ASSET_REPAIRED" if update_data.get("status") == "active" else "ASSET_UPDATED"
+    if update_data.get("lab_id") and update_data.get("lab_id") != existing.data[0].get("lab_id"):
+        action = "ASSET_TRANSFERRED"
+    _bc_record(
+        sb,
+        asset_id=asset_id,
+        asset_name=enriched.asset_name,
+        action=action,
+        performed_by=current_user.get("email") or current_user.get("role", "user"),
+        extra_data={"changed_fields": list(update_data.keys()), "new_status": update_data.get("status"), "new_lab": enriched.lab_name},
+    )
+    return enriched
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an asset (admin only)")
 def delete_asset(
     asset_id: str,
     sb: Client = Depends(get_admin_client),
     _: dict = Depends(_require_admin),
 ):
-    existing = sb.table("assets").select("id").eq("id", asset_id).limit(1).execute()
+    existing = sb.table("assets").select("id, asset_name").eq("id", asset_id).limit(1).execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    asset_name = existing.data[0].get("asset_name", asset_id)
     sb.table("assets").delete().eq("id", asset_id).execute()
+    # ── blockchain ────────────────────────────────────────────────────────
+    _bc_record(sb, asset_id=asset_id, asset_name=asset_name, action="ASSET_DISPOSED", performed_by="admin")

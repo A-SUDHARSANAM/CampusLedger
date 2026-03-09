@@ -14,7 +14,7 @@ export type PermissionAction =
   | 'borrow:view'
   | 'procurement:create'
   | 'procurement:approve'
-  | 'procurement:send_to_vendor'
+  | 'procurement:send_to_purchase_dept'
   | 'procurement:place_order'
   | 'procurement:confirm_payment'
   | 'procurement:upload_invoice'
@@ -29,7 +29,7 @@ const rolePermissions: Record<Role, PermissionAction[]> = {
     'maintenance:assign',
     'borrow:view',
     'procurement:approve',
-    'procurement:send_to_vendor'
+    'procurement:send_to_purchase_dept'
   ],
   lab: ['asset:view_lab_only', 'maintenance:raise', 'borrow:create', 'borrow:return', 'borrow:view', 'procurement:create'],
   service: ['maintenance:update_status'],

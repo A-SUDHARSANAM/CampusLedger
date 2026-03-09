@@ -16,12 +16,12 @@ CREATE INDEX idx_maintenance_status       ON maintenance_requests (status);
 
 -- purchase_requests
 CREATE INDEX idx_purchase_req_requested_by  ON purchase_requests (requested_by);
-CREATE INDEX idx_purchase_req_vendor_id     ON purchase_requests (vendor_id);
-CREATE INDEX idx_purchase_req_order_status  ON purchase_requests (order_status);
+CREATE INDEX idx_purchase_req_purchase_department_id  ON purchase_requests (purchase_department_id);
+CREATE INDEX idx_purchase_req_order_status            ON purchase_requests (order_status);
 
 -- purchase_orders
-CREATE INDEX idx_purchase_orders_request_id  ON purchase_orders (request_id);
-CREATE INDEX idx_purchase_orders_vendor_id   ON purchase_orders (vendor_id);
+CREATE INDEX idx_purchase_orders_request_id               ON purchase_orders (request_id);
+CREATE INDEX idx_purchase_orders_purchase_department_id   ON purchase_orders (purchase_department_id);
 
 -- borrow_records
 CREATE INDEX idx_borrow_records_asset_id  ON borrow_records (asset_id);

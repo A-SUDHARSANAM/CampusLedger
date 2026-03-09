@@ -1,0 +1,15 @@
+{
+  "name": "campusledger-blockchain",
+  "version": "1.0.0",
+  "description": "CampusLedger smart contract — immutable asset audit trail",
+  "scripts": {
+    "compile":  "hardhat compile",
+    "deploy:local":   "hardhat run scripts/deploy.js --network localhost",
+    "deploy:mumbai":  "hardhat run scripts/deploy.js --network mumbai",
+    "node":     "hardhat node"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  }
+}

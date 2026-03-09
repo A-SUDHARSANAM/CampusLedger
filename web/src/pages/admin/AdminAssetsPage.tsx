@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, Plus, Search, X } from 'lucide-react';
+import { Download, Plus, QrCode, Search, X } from 'lucide-react';
 import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { Asset, LocationInfo } from '../../types/domain';
@@ -40,6 +40,33 @@ export function AdminAssetsPage() {
   const [category, setCategory] = useState('all');
   const [status, setStatus] = useState('all');
   const [department, setDepartment] = useState('all');
+
+  // QR modal
+  const [qrAsset, setQrAsset] = useState<Asset | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+
+  async function openQrModal(asset: Asset) {
+    setQrAsset(asset);
+    setQrCode(null);
+    setQrLoading(true);
+    try {
+      const result = await api.getAssetQrCode(asset.id);
+      setQrCode(result?.qr_code_b64 ?? null);
+    } catch {
+      setQrCode(null);
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
+  function downloadQr() {
+    if (!qrCode || !qrAsset) return;
+    const link = document.createElement('a');
+    link.href = `data:image/png;base64,${qrCode}`;
+    link.download = `qr-${qrAsset.assetCode || qrAsset.id}.png`;
+    link.click();
+  }
 
   // Add-asset modal
   const [showModal, setShowModal] = useState(false);
@@ -170,6 +197,15 @@ export function AdminAssetsPage() {
               {t('assignLab', 'Assign Lab')}
             </button>
             <button
+              className="btn secondary-btn"
+              style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+              type="button"
+              title="View / Download QR Code"
+              onClick={() => openQrModal(row)}
+            >
+              <QrCode size={13} /> QR
+            </button>
+            <button
               className="btn danger-btn"
               style={{ fontSize: 12, padding: '4px 10px' }}
               type="button"
@@ -277,6 +313,57 @@ export function AdminAssetsPage() {
           subtitle={`${filteredAssets.length} of ${kpiTotal} assets`}
           searchPlaceholder={t('searchAssets', 'Search assets...')}
         />
+      )}
+
+      {/* ── QR Code Modal ─────────────────────────────────────────────── */}
+      {qrAsset && (
+        <div className="modal-backdrop" onClick={() => setQrAsset(null)}>
+          <div className="modal-box" style={{ maxWidth: 380, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ textAlign: 'left' }}>
+                <h3 style={{ margin: 0 }}>{qrAsset.name}</h3>
+                {qrAsset.assetCode && (
+                  <span style={{ fontFamily: 'monospace', fontSize: 12, opacity: 0.6 }}>{qrAsset.assetCode}</span>
+                )}
+              </div>
+              <button type="button" onClick={() => setQrAsset(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: 'var(--bg-page, #0f172a)', borderRadius: 12, padding: '1.5rem', marginBottom: 14, minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {qrLoading && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span style={{ fontSize: 13, opacity: 0.5 }}>Generating QR…</span>
+                </div>
+              )}
+              {!qrLoading && qrCode && (
+                <img
+                  src={`data:image/png;base64,${qrCode}`}
+                  alt={`QR code for ${qrAsset.name}`}
+                  style={{ width: 180, height: 180, imageRendering: 'pixelated' }}
+                />
+              )}
+              {!qrLoading && !qrCode && (
+                <span style={{ fontSize: 13, opacity: 0.5 }}>QR code unavailable</span>
+              )}
+            </div>
+
+            <p style={{ fontSize: 12, opacity: 0.55, margin: '0 0 16px' }}>
+              Scan with any phone camera to view asset details — no login required.
+            </p>
+
+            <div className="modal-actions" style={{ justifyContent: 'center' }}>
+              <button type="button" className="btn secondary-btn" onClick={() => setQrAsset(null)}>Close</button>
+              {qrCode && (
+                <button type="button" className="btn primary-btn" onClick={downloadQr}>
+                  <Download size={14} style={{ marginRight: 4 }} /> Download PNG
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Add Asset Modal ──────────────────────────────────────────── */}

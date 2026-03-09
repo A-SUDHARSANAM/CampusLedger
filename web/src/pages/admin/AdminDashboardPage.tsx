@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, BarChart2, Box, Brain, CheckCircle2, RefreshCw,
+  AlertTriangle, BarChart2, Box, Brain, Camera, CheckCircle2, RefreshCw,
   TrendingUp, Users, Wrench, XCircle
 } from 'lucide-react';
+import { OCRScanner, type OCRResult } from '../../components/OCRScanner';
 import { api } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -352,15 +353,81 @@ function ChartCard({
 export function AdminDashboardPage() {
   const { t } = useLanguage();
 
+  const navigate = useNavigate();
   const [kpis, setKpis] = useState<AdminKpis | null>(null);
   const [dash, setDash] = useState<DashData | null>(null);
   const [locationAnalytics, setLocationAnalytics] = useState<LocationAnalytics | null>(null);
   const [mlPreview, setMlPreview] = useState<MlPreviewItem[]>([]);
+  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [animate, setAnimate] = useState(false);
   const [runningChecks, setRunningChecks] = useState(false);
   const [checksMsg, setChecksMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
+
+  // OCR save-to-asset modal state
+  const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrCategoryList, setOcrCategoryList] = useState<{ id: string; category_name: string }[]>([]);
+  const [ocrLabList, setOcrLabList] = useState<{ id: string; name: string; department?: string }[]>([]);
+  const [ocrForm, setOcrForm] = useState({ name: '', category: '', serialNumber: '', model: '', purchaseDate: '', labId: '', status: 'Active' });
+  const [ocrSaving, setOcrSaving] = useState(false);
+  const [ocrSaveError, setOcrSaveError] = useState('');
+  const [ocrSaveSuccess, setOcrSaveSuccess] = useState(false);
+
+  async function handleOcrResult(res: OCRResult) {
+    setOcrResult(res);
+    const f = res.detected_fields;
+    setOcrForm({
+      name: f.asset_name ?? '',
+      category: '',
+      serialNumber: f.serial_number ?? '',
+      model: f.model ?? '',
+      purchaseDate: f.purchase_date ?? '',
+      labId: '',
+      status: 'Active',
+    });
+    setOcrSaveError('');
+    setOcrSaveSuccess(false);
+    // Lazily load dropdowns
+    const [cats, labs] = await Promise.all([
+      api.getAssetCategories().catch(() => [] as { id: string; category_name: string }[]),
+      api.getLabs('admin').catch(() => [] as { id: string; name: string; department?: string }[]),
+    ]);
+    setOcrCategoryList(cats);
+    setOcrLabList(labs);
+    setShowOcrModal(true);
+  }
+
+  async function handleOcrSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ocrForm.name.trim()) { setOcrSaveError('Asset name is required.'); return; }
+    if (!ocrForm.category.trim()) { setOcrSaveError('Category is required.'); return; }
+    setOcrSaveError('');
+    setOcrSaving(true);
+    try {
+      const lab = ocrLabList.find((l) => l.id === ocrForm.labId);
+      await api.createAsset('admin', {
+        name: ocrForm.name.trim(),
+        assetCode: ocrForm.serialNumber.trim(),
+        category: ocrForm.category.trim(),
+        location: lab?.name ?? '',
+        labId: ocrForm.labId || '',
+        locationId: undefined,
+        status: ocrForm.status as 'Active' | 'Under Maintenance' | 'Damaged',
+        warranty: '',
+        purchaseDate: ocrForm.purchaseDate || undefined,
+      });
+      setOcrSaveSuccess(true);
+      setTimeout(() => {
+        setShowOcrModal(false);
+        navigate('/admin/assets');
+      }, 1000);
+    } catch (err: unknown) {
+      setOcrSaveError(err instanceof Error ? err.message : 'Failed to save asset.');
+    } finally {
+      setOcrSaving(false);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -674,6 +741,97 @@ export function AdminDashboardPage() {
             </Link>{' '}
             {t('forFullReport', 'for the full report.')}
           </span>
+        </div>
+      )}
+
+      {/* ── OCR Asset Label Scanner ────────────── */}
+      <div
+        className={`page-intro entry-animate ${animate ? 'in' : ''}`}
+        style={{ '--delay': '960ms', marginTop: 8 } as React.CSSProperties}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Camera size={20} style={{ color: '#4F6EF7' }} />
+          <h3 style={{ margin: 0, fontSize: '1.05rem' }}>{t('ocrAssetScanner', 'Asset Label Scanner (OCR)')}</h3>
+        </div>
+        <p style={{ margin: '2px 0 0', fontSize: '0.85rem', opacity: 0.65 }}>
+          {t('ocrAdminDesc', 'Scan asset labels or invoices to quickly extract asset details.')}
+        </p>
+      </div>
+
+      <OCRScanner
+        title={t('scanAssetLabel', 'Scan Asset Label')}
+        description={t('ocrAdminHint', 'Upload a photo of an asset label, invoice, or printed sheet to extract name, serial number, and model.')}
+        displayFields={['asset_name', 'serial_number', 'model', 'price', 'purchase_date']}
+        onResult={handleOcrResult}
+      />
+
+      {/* OCR Save-to-Asset Modal */}
+      {showOcrModal && (
+        <div className="modal-overlay" onClick={() => !ocrSaving && setShowOcrModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>Save Scanned Asset</h3>
+              <button className="modal-close-btn" onClick={() => setShowOcrModal(false)} disabled={ocrSaving}>×</button>
+            </div>
+            {ocrSaveSuccess ? (
+              <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--success, #22c55e)', fontSize: 15 }}>
+                ✓ Asset saved! Redirecting to assets page…
+              </div>
+            ) : (
+              <form onSubmit={handleOcrSave}>
+                <div className="modal-body">
+                  <p style={{ margin: '0 0 16px', fontSize: 13, opacity: 0.65 }}>
+                    Review the details extracted from your invoice, then click Save.
+                  </p>
+                  <div className="form-grid">
+                    <div className="form-field">
+                      <label>Asset Name <span className="required-star">*</span></label>
+                      <input className="input" value={ocrForm.name} onChange={(e) => setOcrForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Dell Monitor 27&quot;" />
+                    </div>
+                    <div className="form-field">
+                      <label>Category <span className="required-star">*</span></label>
+                      <input className="input" list="ocr-cat-list" value={ocrForm.category} onChange={(e) => setOcrForm((p) => ({ ...p, category: e.target.value }))} placeholder="e.g. Electronics" />
+                      <datalist id="ocr-cat-list">
+                        {ocrCategoryList.map((c) => <option key={c.id} value={c.category_name} />)}
+                      </datalist>
+                    </div>
+                    <div className="form-field">
+                      <label>Serial / Asset Code</label>
+                      <input className="input" value={ocrForm.serialNumber} onChange={(e) => setOcrForm((p) => ({ ...p, serialNumber: e.target.value }))} placeholder="e.g. SN-12345" />
+                    </div>
+                    <div className="form-field">
+                      <label>Model</label>
+                      <input className="input" value={ocrForm.model} onChange={(e) => setOcrForm((p) => ({ ...p, model: e.target.value }))} placeholder="e.g. P2723D" />
+                    </div>
+                    <div className="form-field">
+                      <label>Purchase Date</label>
+                      <input className="input" type="date" value={ocrForm.purchaseDate} onChange={(e) => setOcrForm((p) => ({ ...p, purchaseDate: e.target.value }))} />
+                    </div>
+                    <div className="form-field">
+                      <label>Status</label>
+                      <select className="select" value={ocrForm.status} onChange={(e) => setOcrForm((p) => ({ ...p, status: e.target.value }))}>
+                        <option>Active</option>
+                        <option>Under Maintenance</option>
+                        <option>Damaged</option>
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label>Lab (optional)</label>
+                      <select className="select" value={ocrForm.labId} onChange={(e) => setOcrForm((p) => ({ ...p, labId: e.target.value }))}>
+                        <option value="">— None —</option>
+                        {ocrLabList.map((l) => <option key={l.id} value={l.id}>{l.name}{l.department ? ` (${l.department})` : ''}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {ocrSaveError && <p style={{ marginTop: 12, color: 'var(--danger)', fontSize: 13 }}>{ocrSaveError}</p>}
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="btn secondary-btn" onClick={() => setShowOcrModal(false)} disabled={ocrSaving}>Cancel</button>
+                  <button type="submit" className="btn primary-btn" disabled={ocrSaving}>{ocrSaving ? 'Saving…' : 'Save to Assets'}</button>
+                </div>
+              </form>
+            )}
+          </div>
         </div>
       )}
 

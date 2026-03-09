@@ -1,0 +1,258 @@
+/* ═══════════════════════════════════════════════════
+   Digital Twin — Asset Status Visualization
+   Uses CSS custom properties from the global theme.
+═══════════════════════════════════════════════════ */
+
+/* ── Grid container ───────────────────────────────── */
+.dt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+/* ── Filter bar ───────────────────────────────────── */
+.dt-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.dt-filter-bar .input,
+.dt-filter-bar select {
+  width: auto;
+  min-width: 140px;
+  flex: 1 1 140px;
+}
+
+.dt-filter-bar .btn {
+  flex-shrink: 0;
+}
+
+/* ── Asset card ───────────────────────────────────── */
+.dt-card {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  cursor: default;
+  position: relative;
+  overflow: hidden;
+}
+
+.dt-card:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-border);
+}
+
+/* status left accent stripe */
+.dt-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+}
+
+.dt-card.dt-active::before   { background: var(--success); }
+.dt-card.dt-new::before      { background: var(--warning); }
+.dt-card.dt-damaged::before  { background: var(--danger); }
+.dt-card.dt-maintenance::before { background: var(--accent-primary); }
+.dt-card.dt-unknown::before  { background: var(--text-muted); }
+
+/* ── Card header row ──────────────────────────────── */
+.dt-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dt-card-name {
+  font-size: 0.93rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+  flex: 1;
+  word-break: break-word;
+}
+
+/* ── Status dot + label ───────────────────────────── */
+.dt-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 3px 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.dt-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* active */
+.dt-status.dt-active {
+  background: var(--success-soft);
+  color: #16A34A;
+}
+.dt-status.dt-active .dt-status-dot  { background: var(--success); }
+
+/* new / unknown */
+.dt-status.dt-new {
+  background: var(--warning-soft);
+  color: #B45309;
+}
+.dt-status.dt-new .dt-status-dot { background: var(--warning); }
+
+/* damaged */
+.dt-status.dt-damaged {
+  background: var(--danger-soft);
+  color: #B91C1C;
+}
+.dt-status.dt-damaged .dt-status-dot { background: var(--danger); }
+
+/* under maintenance */
+.dt-status.dt-maintenance {
+  background: var(--accent-subtle);
+  color: var(--accent-primary);
+}
+.dt-status.dt-maintenance .dt-status-dot { background: var(--accent-primary); }
+
+[data-theme='dark'] .dt-status.dt-active  { color: #4ADE80; }
+[data-theme='dark'] .dt-status.dt-new     { color: #FCD34D; }
+[data-theme='dark'] .dt-status.dt-damaged { color: #F87171; }
+
+/* ── Card meta info ───────────────────────────────── */
+.dt-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dt-meta-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.dt-meta-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 28px;
+  flex-shrink: 0;
+}
+
+.dt-meta-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+/* ── Summary stat bar ────────────────────────────── */
+.dt-stat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dt-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+.dt-stat-count {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.dt-stat-label {
+  color: var(--text-secondary);
+}
+
+/* ── RFID panel ───────────────────────────────────── */
+.dt-rfid-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dt-rfid-result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dt-rfid-result strong {
+  font-size: 0.93rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ── Empty state ─────────────────────────────────── */
+.dt-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+}
+
+/* ── Polling indicator ───────────────────────────── */
+.dt-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+}
+
+.dt-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: dt-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes dt-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}

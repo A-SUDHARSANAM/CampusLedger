@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScanLine, Upload } from 'lucide-react';
 import { DataTable, type TableColumn } from '../../components/tables';
+import { OCRScanner, type OCRResult } from '../../components/OCRScanner';
 import { api } from '../../services/api';
 import type { ProcurementRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
@@ -9,9 +10,7 @@ export function PurchaseDashboardPage() {
   const { t } = useLanguage();
   const [orders, setOrders] = useState<ProcurementRequest[]>([]);
   const [statusMsg, setStatusMsg] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<Record<string, unknown> | null>(null);
-  const scanInputRef = useRef<HTMLInputElement>(null);
+  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -22,22 +21,6 @@ export function PurchaseDashboardPage() {
   useEffect(() => {
     load();
   }, []);
-
-  async function handleScanInvoice(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setScanning(true);
-    setScanResult(null);
-    try {
-      const result = await api.scanInvoice(file);
-      setScanResult(result);
-      setStatusMsg(t('scanComplete', 'Invoice scanned. Review extracted fields below.'));
-    } catch {
-      setStatusMsg(t('scanFailed', 'OCR scan failed.'));
-    } finally {
-      setScanning(false);
-    }
-  }
 
   async function handleUploadInvoice(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -66,12 +49,12 @@ export function PurchaseDashboardPage() {
       { key: 'requestedByLabName', header: t('lab', 'Lab') },
       { key: 'createdDate', header: t('date', 'Date') },
       { key: 'status', header: t('status', 'Status') },
-      { key: 'vendorName', header: t('vendor', 'Vendor'), render: (v) => String(v ?? '-') },
+      { key: 'purchaseDepartmentName', header: t('purchaseDepartment', 'Purchase Department'), render: (v) => String(v ?? '-') },
       {
         key: 'id',
         header: t('actions', 'Actions'),
         render: (_, row) =>
-          row.status === 'Sent to Vendor' ? (
+          row.status === 'Sent to Purchase Dept' ? (
             <button className="btn primary-btn mini-btn" type="button" onClick={() => handleConfirmPayment(row)}>
               {t('confirmPayment', 'Confirm Payment')}
             </button>
@@ -92,17 +75,6 @@ export function PurchaseDashboardPage() {
 
       {/* Invoice tools */}
       <section className="card" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          className="btn primary-btn"
-          type="button"
-          onClick={() => scanInputRef.current?.click()}
-          disabled={scanning}
-        >
-          <ScanLine size={14} style={{ marginRight: 6 }} />
-          {scanning ? t('scanning', 'Scanning…') : t('scanInvoice', 'Scan Invoice (OCR)')}
-        </button>
-        <input ref={scanInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleScanInvoice} />
-
         <button className="btn secondary-btn" type="button" onClick={() => uploadInputRef.current?.click()}>
           <Upload size={14} style={{ marginRight: 6 }} />
           {t('uploadInvoice', 'Upload Invoice')}
@@ -113,21 +85,46 @@ export function PurchaseDashboardPage() {
       </section>
 
       {/* OCR scan result */}
-      {scanResult && Object.keys(scanResult).length > 0 && (
-        <section className="card">
-          <h3 style={{ marginBottom: 12 }}>{t('scanResult', 'Extracted Invoice Data')}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-            {['product_name', 'serial_number', 'purchase_date', 'warranty_period', 'price'].map((field) =>
-              scanResult[field] != null ? (
-                <div key={field} className="metric-card" style={{ padding: 12 }}>
-                  <p className="metric-title" style={{ textTransform: 'capitalize' }}>{field.replace(/_/g, ' ')}</p>
-                  <p className="metric-value" style={{ fontSize: '1em' }}>{String(scanResult[field])}</p>
-                </div>
-              ) : null
-            )}
-          </div>
-        </section>
-      )}
+      <OCRScanner
+        title={t('scanInvoice', 'Scan Invoice (OCR)')}
+        description={t('ocrPurchaseHint', 'Upload a photo of an invoice or delivery note to extract purchase details automatically.')}
+        displayFields={['asset_name', 'serial_number', 'model', 'quantity', 'price', 'purchase_department', 'purchase_date']}
+        onResult={(res) => {
+          setOcrResult(res);
+          setStatusMsg(t('scanComplete', 'Invoice scanned. Review extracted fields below.'));
+        }}
+      />
+
+      {ocrResult && ocrResult.detected_fields && (() => {
+        const f = ocrResult.detected_fields;
+        const itemName = f.asset_name ?? '';
+        const qty = f.quantity ?? '1';
+        const price = f.price ?? '';
+        const purchaseDept = f.purchase_department ?? '';
+        const params = new URLSearchParams();
+        if (itemName) params.set('item_name', itemName);
+        if (qty) params.set('quantity', qty);
+        if (price) params.set('estimated_cost', price);
+        if (purchaseDept) params.set('purchase_department_name', purchaseDept);
+        return (
+          <section className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+            <button
+              className="btn primary-btn"
+              type="button"
+              onClick={() => {
+                // Navigate to procurement request form (if available) or show helper
+                setStatusMsg(t('ocrRequestHint', `Ready to create request: ${itemName || 'item'} × ${qty}`));
+              }}
+            >
+              <ScanLine size={14} style={{ marginRight: 6 }} />
+              {t('createPurchaseRequest', 'Create Purchase Request')}
+            </button>
+            <span style={{ fontSize: '0.82rem', opacity: 0.6 }}>
+              {itemName && `${itemName}`}{qty && ` × ${qty}`}{price && ` @ ${price}`}
+            </span>
+          </section>
+        );
+      })()}
 
       <DataTable
         data={orders}

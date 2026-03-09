@@ -23,6 +23,9 @@ qrcode[pil]==8.0
 # OCR — invoice scanning
 # Requires Tesseract binary: https://github.com/UB-Mannheim/tesseract/wiki
 pytesseract==0.3.13
+Pillow>=10.0.0
+# OpenCV for image preprocessing (grayscale + threshold)
+opencv-python>=4.9.0
 # For OpenAI GPT-4 Vision engine (optional, higher accuracy):
 # pip install openai
 

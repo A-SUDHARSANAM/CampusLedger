@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # Direct PostgreSQL connection (via Supabase connection string)
     DATABASE_URL: str = ""
 
+    # OpenAI
+    OPENAI_API_KEY: str = ""
+
+    # Frontend base URL (used for QR code URL generation)
+    FRONTEND_URL: str = "http://localhost:5173"
+
     # CORS
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",

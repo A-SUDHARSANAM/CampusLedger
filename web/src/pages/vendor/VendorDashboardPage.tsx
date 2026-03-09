@@ -31,9 +31,9 @@ export function VendorDashboardPage() {
             <button
               className="btn secondary-btn mini-btn"
               type="button"
-              disabled={row.status !== 'Sent to Vendor'}
+              disabled={row.status !== 'Sent to Purchase Dept'}
               onClick={async () => {
-                await api.vendorUpdateProcurement('purchase_dept', row.requestNo, 'Accepted by Vendor');
+                await api.purchaseDeptUpdateProcurement('purchase_dept', row.requestNo, 'Accepted by Purchase Dept');
                 await load();
               }}
             >
@@ -42,9 +42,9 @@ export function VendorDashboardPage() {
             <button
               className="btn danger-btn mini-btn"
               type="button"
-              disabled={row.status !== 'Sent to Vendor'}
+              disabled={row.status !== 'Sent to Purchase Dept'}
               onClick={async () => {
-                await api.vendorUpdateProcurement('purchase_dept', row.requestNo, 'Rejected by Vendor');
+                await api.purchaseDeptUpdateProcurement('purchase_dept', row.requestNo, 'Rejected by Purchase Dept');
                 await load();
               }}
             >
@@ -60,10 +60,10 @@ export function VendorDashboardPage() {
   return (
     <div className="dashboard-grid">
       <section className="card">
-        <h2>{t('vendorPortal', 'Vendor Portal')}</h2>
-        <p>{t('vendorPortalDesc', 'Review approved purchase/service requests from admin and accept them for fulfillment.')}</p>
+        <h2>{t('purchaseDeptPortal', 'Purchase Department Portal')}</h2>
+        <p>{t('purchaseDeptPortalDesc', 'Review approved purchase/service requests from admin and accept them for fulfillment.')}</p>
       </section>
-      <DataTable data={requests} columns={columns} title={t('assignedOrders', 'Assigned Orders')} subtitle={t('vendorWorkflowDesc', 'Vendor-side acceptance workflow')} />
+      <DataTable data={requests} columns={columns} title={t('assignedOrders', 'Assigned Orders')} subtitle={t('purchaseDeptWorkflowDesc', 'Purchase department acceptance workflow')} />
     </div>
   );
 }

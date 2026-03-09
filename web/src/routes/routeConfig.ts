@@ -11,7 +11,10 @@ import {
   ShoppingCart,
   Receipt,
   Brain,
-  Cpu
+  Cpu,
+  Activity,
+  Link2,
+  ScanLine
 } from 'lucide-react';
 import type { Role } from '../types/auth';
 
@@ -39,6 +42,10 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'Maintenance', to: '/admin/maintenance', icon: Wrench, group: 'main' },
     { label: 'Reports', to: '/admin/reports', icon: FileText, group: 'main' },
     { label: 'Inventory Intelligence', to: '/admin/inventory-intelligence', icon: Brain, group: 'main' },
+    { label: 'Digital Twin', to: '/admin/digital-twin', icon: Activity, group: 'main' },
+    { label: 'Device Monitoring', to: '/admin/device-monitoring', icon: Cpu, group: 'main' },
+    { label: 'Blockchain Audit', to: '/admin/blockchain', icon: Link2, group: 'main' },
+    { label: 'Asset Tracking', to: '/admin/asset-tracking', icon: ScanLine, group: 'main' },
     { label: 'Settings', to: '/admin/settings', icon: Settings, group: 'system' }
   ],
   lab: [
@@ -46,6 +53,8 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'My Assets', to: '/lab/assets', icon: Boxes, group: 'main' },
     { label: 'Procurement', to: '/lab/procurement', icon: ShoppingCart, group: 'main' },
     { label: 'Maintenance Requests', to: '/lab/maintenance', icon: Wrench, group: 'main' },
+    { label: 'Lab Digital Twin', to: '/lab/digital-twin', icon: Activity, group: 'main' },
+    { label: 'Lab Device Monitor', to: '/lab/device-monitoring', icon: Cpu, group: 'main' },
     { label: 'Settings', to: '/lab/settings', icon: Settings, group: 'system' }
   ],
   service: [

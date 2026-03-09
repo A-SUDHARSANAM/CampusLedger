@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { QrCode, ScanLine, Wrench, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, QrCode, ScanLine, Wrench, X } from 'lucide-react';
 import { DataList, DataTable, type ListItem, type TableColumn } from '../../components/tables';
+import { OCRScanner, type OCRResult } from '../../components/OCRScanner';
 import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import type { Asset, LocationInfo, MaintenanceRequest, Priority } from '../../types/domain';
@@ -33,6 +34,21 @@ export function LabMaintenancePage() {
   // QR code viewer
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [qrModalCode, setQrModalCode] = useState('');
+
+  // OCR scan
+  const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrScanFile, setOcrScanFile] = useState<File | null>(null);
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleOcrResult(result: OCRResult) {
+    const fields = result.detected_fields;
+    const parts: string[] = [];
+    if (fields.asset_name) parts.push(`Asset: ${fields.asset_name}`);
+    if (fields.serial_number) parts.push(`S/N: ${fields.serial_number}`);
+    if (fields.model) parts.push(`Model: ${fields.model}`);
+    if (parts.length) setModalIssue((prev) => prev ? `${prev}\n${parts.join(' | ')}` : parts.join(' | '));
+    setShowOcrModal(false);
+  }
 
   async function loadData() {
     const [assetRows, maintenanceRows] = await Promise.all([
@@ -217,6 +233,28 @@ export function LabMaintenancePage() {
         </div>
       )}
 
+      {/* ── OCR Scan Modal ──────────────────────────────────── */}
+      {showOcrModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowOcrModal(false)}>
+          <div className="modal-box" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3><Camera size={16} style={{ marginRight: 6 }} />Scan Asset Label</h3>
+              <button className="modal-close-btn" type="button" onClick={() => setShowOcrModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ padding: '12px 0' }}>
+              <OCRScanner
+                title="Scan Asset Label"
+                description="Upload a photo of the asset's label or tag to auto-fill the issue description."
+                displayFields={['asset_name', 'serial_number', 'model']}
+                onResult={handleOcrResult}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Report Issue Modal ─────────────────────────────── */}
       {showModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowModal(false)}>
@@ -300,6 +338,17 @@ export function LabMaintenancePage() {
 
               <label className="form-label">
                 {t('issueDescription', 'Issue Description')} *
+                <div style={{ display: 'flex', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn secondary-btn mini-btn"
+                    onClick={() => setShowOcrModal(true)}
+                    title="Scan asset label to auto-fill"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  >
+                    <Camera size={13} /> Scan Label
+                  </button>
+                </div>
                 <textarea
                   className="input"
                   rows={3}

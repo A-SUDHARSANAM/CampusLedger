@@ -18,7 +18,7 @@ DEPLOY_ORDER = [
     "queries/tables/departments.sql",
     "queries/tables/roles.sql",
     "queries/tables/asset_categories.sql",
-    "queries/tables/vendors.sql",
+    "queries/tables/purchase_department.sql",
 
     # 3. Core entity tables
     "queries/tables/labs.sql",               # depends on: departments
@@ -32,8 +32,8 @@ DEPLOY_ORDER = [
     "queries/tables/maintenance_logs.sql",      # depends on: maintenance_requests, users
 
     # 6. Procurement
-    "queries/tables/purchase_requests.sql",  # depends on: users, vendors
-    "queries/tables/purchase_orders.sql",    # depends on: purchase_requests, vendors
+    "queries/tables/purchase_requests.sql",  # depends on: users, purchase_department
+    "queries/tables/purchase_orders.sql",    # depends on: purchase_requests, purchase_department
     "queries/tables/approval_logs.sql",      # depends on: users
 
     # 7. Asset lifecycle

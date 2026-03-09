@@ -19,6 +19,78 @@ import type {
   ProcurementStatus,
   UserRecord
 } from '../types/domain';
+import type { MapAsset } from '../components/digitalTwin/AssetNode';
+import type { CampusData } from '../components/digitalTwin/CampusMap';
+export type { MapAsset };
+
+export interface BlockchainBlock {
+  id: string;
+  block_index: number;
+  asset_id: string;
+  asset_name: string;
+  action: string;
+  performed_by: string;
+  block_hash: string;
+  prev_hash: string;
+  block_data: Record<string, unknown>;
+  created_at: string;
+}
+
+// ── QR / RFID Tracking types ──────────────────────────────────────────────────
+export interface AssetIdentifyResult {
+  asset_id: string;
+  asset_name: string;
+  category_name: string;
+  status: string;
+  serial_number?: string;
+  lab_name?: string;
+  location_name?: string;
+  condition_notes?: string;
+  qr_code_b64?: string;
+}
+
+export interface VerificationLog {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  verified_by: string;
+  location: string;
+  scan_method: 'qr' | 'rfid' | 'manual';
+  notes?: string;
+  created_at: string;
+}
+
+export interface RfidTag {
+  id: string;
+  rfid_tag: string;
+  asset_id?: string;
+  asset_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RfidMovement {
+  id: string;
+  rfid_tag: string;
+  asset_id?: string;
+  asset_name: string;
+  from_location?: string;
+  to_location: string;
+  is_authorized: boolean;
+  created_at: string;
+}
+
+export interface UsageSession {
+  id: string;
+  asset_id: string;
+  asset_name: string;
+  location: string;
+  start_time: string;
+  end_time?: string;
+  duration_minutes?: number;
+  triggered_by: string;
+  created_at: string;
+}
 
 // ── Configuration ─────────────────────────────────────────────────────────────
 const BASE_URL = '/api/v1';
@@ -328,10 +400,10 @@ function adaptProcurement(raw: Record<string, unknown>): ProcurementRequest {
   const statusMap: Record<string, ProcurementStatus> = {
     pending_review: 'Pending Admin Approval',
     approved: 'Approved by Admin',
-    rejected: 'Rejected by Vendor',
-    ordered: 'Sent to Vendor',
-    payment_confirmed: 'Accepted by Vendor',
-    delivered: 'Accepted by Vendor'
+    rejected: 'Rejected by Purchase Dept',
+    ordered: 'Sent to Purchase Dept',
+    payment_confirmed: 'Accepted by Purchase Dept',
+    delivered: 'Accepted by Purchase Dept'
   };
   return {
     id: String(raw.id ?? ''),
@@ -341,7 +413,7 @@ function adaptProcurement(raw: Record<string, unknown>): ProcurementRequest {
     category: 'Purchase',
     createdDate: String((raw.created_at as string | undefined)?.slice(0, 10) ?? ''),
     status: statusMap[String(raw.status ?? '')] ?? 'Pending Admin Approval',
-    vendorName: raw.vendor_name ? String(raw.vendor_name) : undefined,
+    purchaseDepartmentName: raw.purchase_department_name ? String(raw.purchase_department_name) : undefined,
     notes: raw.notes ? String(raw.notes) : undefined,
     items: [{
       itemId: String(raw.id ?? ''),
@@ -906,7 +978,7 @@ export const api = {
     const data = await backendGet<Record<string, unknown>[]>(`/purchase/orders${params}`);
     if (data) return data.map(adaptProcurement);
     if (role === 'lab') return delay(procurementRequests.filter((r) => r.requestedByLabId === labId));
-    if (role === 'purchase_dept') return delay(procurementRequests.filter((r) => r.status === 'Approved by Admin' || r.status === 'Sent to Vendor'));
+    if (role === 'purchase_dept') return delay(procurementRequests.filter((r) => r.status === 'Approved by Admin' || r.status === 'Sent to Purchase Dept'));
     return delay([...procurementRequests]);
   },
 
@@ -948,18 +1020,18 @@ export const api = {
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
     if (index < 0) throw new Error('Procurement request not found.');
-    procurementRequests[index] = { ...procurementRequests[index], status: 'Rejected by Vendor' };
+    procurementRequests[index] = { ...procurementRequests[index], status: 'Rejected by Purchase Dept' };
     return delay(procurementRequests[index]);
   },
 
-  async sendProcurementToVendor(role: Role, requestId: string, vendorName: string): Promise<ProcurementRequest> {
-    assertPermission(role, 'procurement:send_to_vendor');
-    const body = { request_id: requestId, vendor_name: vendorName, expected_delivery_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) };
+  async sendProcurementToPurchaseDept(role: Role, requestId: string, purchaseDepartmentName: string): Promise<ProcurementRequest> {
+    assertPermission(role, 'procurement:send_to_purchase_dept');
+    const body = { request_id: requestId, purchase_department_name: purchaseDepartmentName, expected_delivery_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10) };
     const data = await backendPost<Record<string, unknown>>('/purchase/order', body);
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
     if (index < 0) throw new Error('Procurement request not found.');
-    procurementRequests[index] = { ...procurementRequests[index], status: 'Sent to Vendor', vendorName };
+    procurementRequests[index] = { ...procurementRequests[index], status: 'Sent to Purchase Dept', purchaseDepartmentName };
     return delay(procurementRequests[index]);
   },
 
@@ -968,7 +1040,7 @@ export const api = {
     if (data) return adaptProcurement(data);
     const index = procurementRequests.findIndex((r) => r.requestNo === requestId || r.id === requestId);
     if (index < 0) throw new Error('Request not found.');
-    procurementRequests[index] = { ...procurementRequests[index], status: 'Accepted by Vendor' };
+    procurementRequests[index] = { ...procurementRequests[index], status: 'Accepted by Purchase Dept' };
     return delay(procurementRequests[index]);
   },
 
@@ -1000,8 +1072,30 @@ export const api = {
     return {};
   },
 
-  async vendorUpdateProcurement(role: Role, requestId: string, decision: Extract<ProcurementStatus, 'Accepted by Vendor' | 'Rejected by Vendor'>): Promise<ProcurementRequest> {
-    if (decision === 'Accepted by Vendor') {
+  async ocrScan(file: File): Promise<{ text: string; detected_fields: { asset_name?: string; serial_number?: string; model?: string; quantity?: number; price?: number; purchase_department?: string; purchase_date?: string }; message?: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE_URL}/ocr/scan`, {
+      method: 'POST',
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      body: formData
+    });
+    if (res.ok) return res.json();
+    const errBody = await res.json().catch(() => null);
+    const detail = errBody?.detail ?? `OCR request failed (HTTP ${res.status})`;
+    throw new Error(detail);
+  },
+
+  async rfidScan(tagId: string): Promise<{ id: string; name: string; status: string; serial_number?: string; location?: string } | null> {
+    const data = await backendPost<{ id: string; name: string; status: string; serial_number?: string; location?: string }>(
+      '/digital-twin/rfid/scan',
+      { tag_id: tagId }
+    );
+    return data ?? null;
+  },
+
+  async purchaseDeptUpdateProcurement(role: Role, requestId: string, decision: Extract<ProcurementStatus, 'Accepted by Purchase Dept' | 'Rejected by Purchase Dept'>): Promise<ProcurementRequest> {
+    if (decision === 'Accepted by Purchase Dept') {
       const data = await backendPost<Record<string, unknown>>(`/purchase/${requestId}/confirm-payment`, {});
       if (data) return adaptProcurement(data);
     }
@@ -1335,5 +1429,135 @@ export const api = {
       quantity,
       notes: 'Auto-generated from ML demand prediction',
     });
+  },
+
+  async triggerReorderAlert(item: {
+    item_id: string;
+    item_name: string;
+    current_stock: number;
+    suggested_order: number;
+    reorder_level: number;
+  }): Promise<{ ok: boolean; message: string }> {
+    const data = await backendPostOrThrow<{ ok: boolean; message: string }>(
+      '/inventory/reorder-alert',
+      item,
+    );
+    return data ?? { ok: true, message: 'Alert sent.' };
+  },
+
+  // ── Device Health Monitoring ──────────────────────────────────────────────
+  async getDeviceHealth(labId?: string): Promise<import('../components/deviceMonitoring/DeviceHealthDashboard').DeviceHealth[]> {
+    const path = labId ? `/device-health/lab/${labId}` : '/device-health';
+    const data = await backendGet<import('../components/deviceMonitoring/DeviceHealthDashboard').DeviceHealth[]>(path);
+    return data ?? [];
+  },
+
+  // ── Digital Twin Map ─────────────────────────────────────────────────────
+  async getDigitalTwinAssets(params?: { labId?: string; department?: string; asset_type?: string }): Promise<MapAsset[]> {
+    const qs = new URLSearchParams();
+    if (params?.labId)      qs.set('lab_id',    params.labId);
+    if (params?.department) qs.set('department', params.department);
+    if (params?.asset_type) qs.set('asset_type', params.asset_type);
+    const path = `/digital-twin/assets${qs.toString() ? `?${qs}` : ''}`;
+    const data = await backendGet<MapAsset[]>(path);
+    return data ?? [];
+  },
+
+  async getCampus(): Promise<CampusData> {
+    const data = await backendGet<CampusData>('/digital-twin/campus');
+    return data ?? { buildings: [] };
+  },
+
+  // ── Blockchain Audit Trail ────────────────────────────────────────────────
+  async getBlockchainLedger(params?: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+  }): Promise<BlockchainBlock[]> {
+    const qs = new URLSearchParams();
+    if (params?.limit  != null) qs.set('limit',  String(params.limit));
+    if (params?.offset != null) qs.set('offset', String(params.offset));
+    if (params?.action)         qs.set('action', params.action);
+    const path = `/blockchain/ledger${qs.toString() ? `?${qs}` : ''}`;
+    const data = await backendGet<BlockchainBlock[]>(path);
+    return data ?? [];
+  },
+
+  async getBlockchainAssetHistory(assetId: string): Promise<BlockchainBlock[]> {
+    const data = await backendGet<BlockchainBlock[]>(`/blockchain/asset/${assetId}`);
+    return data ?? [];
+  },
+
+  async verifyBlockchain(): Promise<{ intact: boolean; total_blocks: number; first_broken_index: number | null; message: string }> {
+    const data = await backendGet<{ intact: boolean; total_blocks: number; first_broken_index: number | null; message: string }>('/blockchain/verify');
+    return data ?? { intact: false, total_blocks: 0, first_broken_index: null, message: 'Verification failed.' };
+  },
+
+  // ── QR Tracking ──────────────────────────────────────────────────────────
+  async identifyAsset(assetId: string): Promise<AssetIdentifyResult | null> {
+    return backendGet<AssetIdentifyResult>(`/qr-track/asset/${assetId}`);
+  },
+
+  async getAssetQrCode(assetId: string): Promise<{ asset_id: string; qr_code_b64: string } | null> {
+    return backendGet<{ asset_id: string; qr_code_b64: string }>(`/qr-track/asset/${assetId}/code`);
+  },
+
+  async verifyAsset(payload: { asset_id: string; verified_by: string; location: string; scan_method: string; notes?: string }): Promise<VerificationLog | null> {
+    return backendPost<VerificationLog>('/qr-track/verify', payload);
+  },
+
+  async getVerificationLogs(params?: { asset_id?: string; limit?: number }): Promise<VerificationLog[]> {
+    const qs = new URLSearchParams();
+    if (params?.asset_id) qs.set('asset_id', params.asset_id);
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const path = `/qr-track/verifications${qs.toString() ? `?${qs}` : ''}`;
+    const data = await backendGet<VerificationLog[]>(path);
+    return data ?? [];
+  },
+
+  // ── RFID Tracking ─────────────────────────────────────────────────────────
+  async rfidScan(payload: { rfid_tag: string; reader_location: string; reader_id?: string }): Promise<RfidMovement> {
+    return backendPostOrThrow<RfidMovement>('/rfid/scan', payload);
+  },
+
+  async getRfidMovements(params?: { asset_id?: string; unauthorized_only?: boolean; limit?: number }): Promise<RfidMovement[]> {
+    const qs = new URLSearchParams();
+    if (params?.asset_id) qs.set('asset_id', params.asset_id);
+    if (params?.unauthorized_only) qs.set('unauthorized_only', 'true');
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const path = `/rfid/movements${qs.toString() ? `?${qs}` : ''}`;
+    const data = await backendGet<RfidMovement[]>(path);
+    return data ?? [];
+  },
+
+  async getRfidAlerts(): Promise<RfidMovement[]> {
+    const data = await backendGet<RfidMovement[]>('/rfid/alerts');
+    return data ?? [];
+  },
+
+  async getRfidTags(): Promise<RfidTag[]> {
+    const data = await backendGet<RfidTag[]>('/rfid/tags');
+    return data ?? [];
+  },
+
+  async registerRfidTag(payload: { rfid_tag: string; asset_id: string; asset_name?: string }): Promise<RfidTag> {
+    return backendPostOrThrow<RfidTag>('/rfid/tags', payload);
+  },
+
+  async getUsageSessions(params?: { asset_id?: string; limit?: number }): Promise<UsageSession[]> {
+    const qs = new URLSearchParams();
+    if (params?.asset_id) qs.set('asset_id', params.asset_id);
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    const path = `/rfid/usage${qs.toString() ? `?${qs}` : ''}`;
+    const data = await backendGet<UsageSession[]>(path);
+    return data ?? [];
+  },
+
+  async startUsageSession(payload: { asset_id: string; location: string; triggered_by?: string }): Promise<UsageSession | null> {
+    return backendPost<UsageSession>('/rfid/usage/start', payload);
+  },
+
+  async endUsageSession(usageLogId: string): Promise<UsageSession | null> {
+    return backendPost<UsageSession>('/rfid/usage/end', { usage_log_id: usageLogId });
   },
 };

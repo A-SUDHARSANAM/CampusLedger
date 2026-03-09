@@ -90,9 +90,9 @@ export type ProcurementCategory = 'Purchase' | 'Service';
 export type ProcurementStatus =
   | 'Pending Admin Approval'
   | 'Approved by Admin'
-  | 'Sent to Vendor'
-  | 'Accepted by Vendor'
-  | 'Rejected by Vendor'
+  | 'Sent to Purchase Dept'
+  | 'Accepted by Purchase Dept'
+  | 'Rejected by Purchase Dept'
   | 'pending_review'
   | 'approved'
   | 'rejected'
@@ -144,7 +144,7 @@ export type ProcurementRequest = {
   category: ProcurementCategory;
   createdDate: string;
   status: ProcurementStatus;
-  vendorName?: string;
+  purchaseDepartmentName?: string;
   notes?: string;
   items: BorrowItem[];
 };
