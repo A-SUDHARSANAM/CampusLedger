@@ -36,6 +36,7 @@ class Asset(Base):
     purchase_date = Column(Date, nullable=True)
     warranty_expiry = Column(Date, nullable=True)
     purchase_price = Column(Numeric(12, 2), nullable=True)
+    lifecycle_years = Column(Integer, nullable=True, default=5)
     location_detail = Column(String(255), nullable=True)
     qr_code = Column(String(500), nullable=True)
     image_url = Column(String(500), nullable=True)

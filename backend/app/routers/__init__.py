@@ -19,6 +19,9 @@ from app.routers.device_health import router as device_health_router
 from app.routers.blockchain import router as blockchain_router
 from app.routers.qr_tracking import router as qr_tracking_router
 from app.routers.rfid import router as rfid_router
+from app.routers.tasks import router as tasks_router
+from app.routers.chatbot import router as chatbot_router
+from app.routers.finance import router as finance_router
 
 __all__ = [
     "auth_routes_router",
@@ -42,4 +45,7 @@ __all__ = [
     "blockchain_router",
     "qr_tracking_router",
     "rfid_router",
+    "tasks_router",
+    "chatbot_router",
+    "finance_router",
 ]

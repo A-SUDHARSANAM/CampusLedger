@@ -27,6 +27,9 @@ from app.routers import (
     blockchain_router,
     qr_tracking_router,
     rfid_router,
+    tasks_router,
+    chatbot_router,
+    finance_router,
 )
 
 API_PREFIX = "/api/v1"
@@ -110,6 +113,9 @@ app.include_router(device_health_router,     prefix=API_PREFIX)
 app.include_router(blockchain_router,        prefix=API_PREFIX)
 app.include_router(qr_tracking_router,       prefix=API_PREFIX)
 app.include_router(rfid_router,              prefix=API_PREFIX)
+app.include_router(tasks_router,             prefix=API_PREFIX)
+app.include_router(chatbot_router,           prefix=API_PREFIX)
+app.include_router(finance_router,           prefix=API_PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

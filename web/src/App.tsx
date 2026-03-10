@@ -31,6 +31,7 @@ import PublicAssetPage from './pages/PublicAssetPage';
 import { LabDigitalTwinPage } from './pages/lab/LabDigitalTwinPage';
 import { LabDeviceMonitoringPage } from './pages/lab/LabDeviceMonitoringPage';
 import { LanguageProvider } from './context/LanguageContext';
+import { FinanceForecastPage } from './pages/admin/FinanceForecastPage';
 
 function App() {
   return (
@@ -57,6 +58,7 @@ function App() {
               <Route path="device-monitoring" element={<AdminDeviceMonitoringPage />} />
               <Route path="blockchain" element={<BlockchainAuditPage />} />
               <Route path="asset-tracking" element={<AssetTrackingPage />} />
+              <Route path="finance-forecast" element={<FinanceForecastPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 
@@ -79,6 +81,7 @@ function App() {
             <Route path="/purchase" element={<ProtectedRoute allowedRoles={['purchase_dept']}><DashboardLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<PurchaseDashboardPage />} />
               <Route path="smart-procurement" element={<PurchaseSmartProcurementPage />} />
+              <Route path="finance-forecast" element={<FinanceForecastPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Route>

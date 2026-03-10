@@ -523,4 +523,5 @@ CREATE INDEX idx_transaction_logs_performed_by  ON transaction_logs (performed_b
 
 -- anomaly_alerts
 CREATE INDEX idx_anomaly_alerts_severity      ON anomaly_alerts (severity);
-CREATE INDEX idx_anomaly_alerts_reference_id  ON anomaly_alerts (reference_id);
+CREATE INDEX idx_anomaly_alerts_reference_id  ON anomaly_alerts (reference_id);\ i   q u e r i e s / t a b l e s / s e r v i c e _ t a s k s . s q l  
+ 

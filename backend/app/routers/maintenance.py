@@ -598,3 +598,27 @@ def upload_image(
 
     result = sb.table("maintenance_requests").update({"image_url": public_url}).eq("id", request_id).execute()
     return _remap(result.data[0])
+
+
+class MaintainRequestIn(BaseModel):
+    asset_id: str
+    issue_description: str
+    reported_by: str
+    lab_id: str
+    priority: str = 'high'
+
+@router.post('/request', status_code=status.HTTP_201_CREATED)
+def raise_maintenance_request(payload: MaintainRequestIn, sb: Client = Depends(get_admin_client)):
+    try:
+        res = sb.table('maintenance_requests').insert({'asset_id': payload.asset_id, 'issue_description': payload.issue_description, 'reported_by': payload.reported_by, 'priority': payload.priority, 'status': 'pending_admin_review'}).execute()
+        return {'message': 'Request created', 'data': res.data[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get('/requests')
+def get_pending_requests(sb: Client = Depends(get_admin_client)):
+    try:
+        res = sb.table('maintenance_requests').select('*').eq('status', 'pending_admin_review').execute()
+        return res.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

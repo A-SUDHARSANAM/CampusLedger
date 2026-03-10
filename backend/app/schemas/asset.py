@@ -41,6 +41,7 @@ class AssetBase(BaseModel):
     purchase_date: Optional[date] = None
     warranty_expiry: Optional[date] = None
     purchase_price: Optional[Decimal] = None
+    lifecycle_years: Optional[int] = 5
     location_detail: Optional[str] = None
 
 
@@ -61,6 +62,7 @@ class AssetUpdate(BaseModel):
     purchase_date: Optional[date] = None
     warranty_expiry: Optional[date] = None
     purchase_price: Optional[Decimal] = None
+    lifecycle_years: Optional[int] = None
     location_detail: Optional[str] = None
     lab_id: Optional[str] = None
     assigned_to_id: Optional[str] = None

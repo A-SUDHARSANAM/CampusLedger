@@ -12,8 +12,8 @@ CREATE TABLE maintenance_requests (
     image_url          TEXT,
     priority           TEXT               NOT NULL DEFAULT 'medium'
                                           CHECK (priority IN ('low', 'medium', 'high', 'critical')),
-    status             TEXT               NOT NULL DEFAULT 'pending'
-                                          CHECK (status IN ('pending', 'assigned', 'in_progress', 'completed')),
+    status             TEXT               NOT NULL DEFAULT 'pending_admin_review'
+                                          CHECK (status IN ('pending_admin_review', 'assigned', 'completed', 'rejected')),
     assigned_staff     UUID               REFERENCES users (id) ON DELETE SET NULL,
     qr_code            TEXT,
     created_at         TIMESTAMPTZ        NOT NULL DEFAULT NOW(),

@@ -14,7 +14,8 @@ import {
   Cpu,
   Activity,
   Link2,
-  ScanLine
+  ScanLine,
+  TrendingUp,
 } from 'lucide-react';
 import type { Role } from '../types/auth';
 
@@ -46,6 +47,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
     { label: 'Device Monitoring', to: '/admin/device-monitoring', icon: Cpu, group: 'main' },
     { label: 'Blockchain Audit', to: '/admin/blockchain', icon: Link2, group: 'main' },
     { label: 'Asset Tracking', to: '/admin/asset-tracking', icon: ScanLine, group: 'main' },
+    { label: 'Finance Forecast', to: '/admin/finance-forecast', icon: TrendingUp, group: 'main' },
     { label: 'Settings', to: '/admin/settings', icon: Settings, group: 'system' }
   ],
   lab: [
@@ -65,6 +67,7 @@ export const SIDEBAR_ITEMS: Record<Role, SidebarItem[]> = {
   purchase_dept: [
     { label: 'Purchase Orders', to: '/purchase/dashboard', icon: Receipt, group: 'main' },
     { label: 'Smart Procurement', to: '/purchase/smart-procurement', icon: Cpu, group: 'main' },
+    { label: 'Finance Forecast', to: '/purchase/finance-forecast', icon: TrendingUp, group: 'main' },
     { label: 'Settings', to: '/purchase/settings', icon: Settings, group: 'system' }
   ]
 };

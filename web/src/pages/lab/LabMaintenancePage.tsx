@@ -64,18 +64,34 @@ export function LabMaintenancePage() {
     api.getLocations().then(setLocationsList).catch(() => { });
   }, [user?.labId]);
 
-  // When location changes in modal, load assets for that location
+  // When location changes in modal, load assets for that location.
+  // If the location returns no assets (common when location ↔ asset mapping
+  // is not set up), fall back to the lab's own asset list already in state.
   useEffect(() => {
-    if (!modalLocationId) { setModalLocationAssets([]); setModalAssetId(''); return; }
+    if (!modalLocationId) {
+      // No location selected — show all lab assets as fallback
+      const fallback = assets.map((a) => ({ id: a.id, name: a.name, assetCode: a.assetCode }));
+      setModalLocationAssets(fallback);
+      setModalAssetId(fallback[0]?.id ?? '');
+      return;
+    }
     setModalLoadingAssets(true);
     api.getLocationAssets(modalLocationId)
       .then((rows) => {
-        setModalLocationAssets(rows);
-        setModalAssetId(rows[0]?.id ?? '');
+        // If location returned assets, use them; otherwise use lab assets
+        const list = rows.length > 0
+          ? rows
+          : assets.map((a) => ({ id: a.id, name: a.name, assetCode: a.assetCode }));
+        setModalLocationAssets(list);
+        setModalAssetId(list[0]?.id ?? '');
       })
-      .catch(() => setModalLocationAssets([]))
+      .catch(() => {
+        const fallback = assets.map((a) => ({ id: a.id, name: a.name, assetCode: a.assetCode }));
+        setModalLocationAssets(fallback);
+        setModalAssetId(fallback[0]?.id ?? '');
+      })
       .finally(() => setModalLoadingAssets(false));
-  }, [modalLocationId]);
+  }, [modalLocationId, assets]);
 
   function openModal() {
     const firstLoc = locationsList[0]?.id ?? '';

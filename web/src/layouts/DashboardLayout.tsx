@@ -7,6 +7,7 @@ import { Bell, ChevronDown, ChevronLeft, ChevronRight, LogOut, Menu, Moon, Searc
 import { useLanguage } from '../context/LanguageContext';
 import { api } from '../services/api';
 import type { Notification } from '../types/domain';
+import ChatbotWidget from '../components/chatbot/ChatbotWidget';
 
 function initials(name?: string) {
   if (!name) return 'U';
@@ -392,6 +393,7 @@ export function DashboardLayout() {
           <Outlet />
         </div>
       </main>
+      <ChatbotWidget />
     </div>
   );
 }
