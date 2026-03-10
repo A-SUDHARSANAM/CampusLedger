@@ -375,8 +375,17 @@ function adaptMaintenance(raw: Record<string, unknown>): MaintenanceRequest {
   const priorityMap: Record<string, Priority> = {
     low: 'Low',
     medium: 'Medium',
-    high: 'High'
+    high: 'High',
+    critical: 'High'    // map critical → High since domain type only has Low/Medium/High
   };
+  // prefer the human-readable name if backend enriched it, fall back to UUID
+  const assignedName = raw.assigned_staff_name
+    ? String(raw.assigned_staff_name)
+    : raw.assigned_to_id
+      ? String(raw.assigned_to_id)
+      : raw.assigned_staff
+        ? String(raw.assigned_staff)
+        : undefined;
   return {
     id: String(raw.id ?? ''),
     requestId: String(raw.id ?? ''),
@@ -386,7 +395,7 @@ function adaptMaintenance(raw: Record<string, unknown>): MaintenanceRequest {
     labId: String(raw.lab_id ?? ''),
     labName: String(raw.lab_name ?? raw.lab_id ?? ''),
     status: statusMap[String(raw.status ?? '').toLowerCase()] ?? 'Pending',
-    assignedTo: raw.assigned_to_id ? String(raw.assigned_to_id) : undefined,
+    assignedTo: assignedName,
     priority: priorityMap[String(raw.priority ?? '').toLowerCase()] ?? 'Medium',
     issue: String(raw.description ?? raw.issue_description ?? ''),
     issueType: raw.issue_type ? String(raw.issue_type) : 'service_request',
@@ -656,9 +665,9 @@ export const api = {
     if (tasks.length > 0) {
       return {
         assignedTasks: tasks.length,
-        pending:    tasks.filter((r) => r.status === 'Pending').length,
+        pending: tasks.filter((r) => r.status === 'Pending').length,
         inProgress: tasks.filter((r) => r.status === 'In Progress').length,
-        completed:  tasks.filter((r) => r.status === 'Completed').length,
+        completed: tasks.filter((r) => r.status === 'Completed').length,
       };
     }
     return delay(serviceKpis);
@@ -785,16 +794,16 @@ export const api = {
     // Seed fallback — covers common campus locations (academic + non-academic)
     // so the Add-Asset dropdown is never blank when the backend/DB is offline.
     return [
-      { id: 'loc-academic-cs',   name: 'CS Lab Block',                 type: 'academic' },
-      { id: 'loc-academic-sci',  name: 'Science & Engineering Block',  type: 'academic' },
-      { id: 'loc-academic-lib',  name: 'Main Library',                 type: 'academic' },
-      { id: 'loc-academic-lec',  name: 'Lecture Hall Complex',         type: 'academic' },
-      { id: 'loc-academic-res',  name: 'Research Centre',              type: 'academic' },
-      { id: 'loc-nonacad-admin', name: 'Administrative Office',        type: 'non_academic' },
-      { id: 'loc-nonacad-cafe',  name: 'Student Cafeteria',            type: 'non_academic' },
-      { id: 'loc-nonacad-sport', name: 'Sports Facility',              type: 'non_academic' },
-      { id: 'loc-nonacad-work',  name: 'Workshop & Maintenance Block', type: 'non_academic' },
-      { id: 'loc-nonacad-host',  name: 'Hostel Complex',               type: 'non_academic' },
+      { id: 'loc-academic-cs', name: 'CS Lab Block', type: 'academic' },
+      { id: 'loc-academic-sci', name: 'Science & Engineering Block', type: 'academic' },
+      { id: 'loc-academic-lib', name: 'Main Library', type: 'academic' },
+      { id: 'loc-academic-lec', name: 'Lecture Hall Complex', type: 'academic' },
+      { id: 'loc-academic-res', name: 'Research Centre', type: 'academic' },
+      { id: 'loc-nonacad-admin', name: 'Administrative Office', type: 'non_academic' },
+      { id: 'loc-nonacad-cafe', name: 'Student Cafeteria', type: 'non_academic' },
+      { id: 'loc-nonacad-sport', name: 'Sports Facility', type: 'non_academic' },
+      { id: 'loc-nonacad-work', name: 'Workshop & Maintenance Block', type: 'non_academic' },
+      { id: 'loc-nonacad-host', name: 'Hostel Complex', type: 'non_academic' },
     ];
   },
 
@@ -990,11 +999,11 @@ export const api = {
     const created: ProcurementRequest[] = [];
     for (const item of payload.items) {
       const body = {
-        item_name:      item.productName,
-        quantity:       item.quantity,
+        item_name: item.productName,
+        quantity: item.quantity,
         estimated_cost: item.unitCost,
-        notes:          payload.notes,
-        lab_id:         payload.requestedByLabId,
+        notes: payload.notes,
+        lab_id: payload.requestedByLabId,
       };
       const data = await backendPostOrThrow<Record<string, unknown>>('/purchase/request', body);
       created.push(adaptProcurement(data));
@@ -1084,14 +1093,6 @@ export const api = {
     const errBody = await res.json().catch(() => null);
     const detail = errBody?.detail ?? `OCR request failed (HTTP ${res.status})`;
     throw new Error(detail);
-  },
-
-  async rfidScan(tagId: string): Promise<{ id: string; name: string; status: string; serial_number?: string; location?: string } | null> {
-    const data = await backendPost<{ id: string; name: string; status: string; serial_number?: string; location?: string }>(
-      '/digital-twin/rfid/scan',
-      { tag_id: tagId }
-    );
-    return data ?? null;
   },
 
   async purchaseDeptUpdateProcurement(role: Role, requestId: string, decision: Extract<ProcurementStatus, 'Accepted by Purchase Dept' | 'Rejected by Purchase Dept'>): Promise<ProcurementRequest> {
@@ -1296,8 +1297,8 @@ export const api = {
       '1': 27.5,  // HDMI Cable
       '2': 13.5,  // Keyboard
       '3': 12.5,  // Mouse
-      '4':  7.0,  // Network Switch
-      '5':  4.0,  // Projector Bulb
+      '4': 7.0,  // Network Switch
+      '5': 4.0,  // Projector Bulb
       '6': 10.5,  // USB Hub
     };
     const SEASONAL = [0.78, 0.91, 1.05, 0.97, 0.82, 1.15, 1.08, 0.96, 1.23, 1.35, 1.46, 1.62];
@@ -1338,12 +1339,12 @@ export const api = {
     //   Mouse & USB Hub              → Low Stock         (stock in [reorder_level*0.5, reorder_level))
     //   Keyboard & Projector Bulb    → Safe              (stock >= reorder_level)
     return [
-      { id: '1', name: 'HDMI Cable',      current_stock: 15 },  // Reorder
-      { id: '2', name: 'Keyboard',         current_stock: 30 },  // Safe
-      { id: '3', name: 'Mouse',            current_stock: 14 },  // Low
-      { id: '4', name: 'Network Switch',   current_stock: 5  },  // Reorder
-      { id: '5', name: 'Projector Bulb',   current_stock: 20 },  // Safe
-      { id: '6', name: 'USB Hub',          current_stock: 12 },  // Low
+      { id: '1', name: 'HDMI Cable', current_stock: 15 },  // Reorder
+      { id: '2', name: 'Keyboard', current_stock: 30 },  // Safe
+      { id: '3', name: 'Mouse', current_stock: 14 },  // Low
+      { id: '4', name: 'Network Switch', current_stock: 5 },  // Reorder
+      { id: '5', name: 'Projector Bulb', current_stock: 20 },  // Safe
+      { id: '6', name: 'USB Hub', current_stock: 12 },  // Low
     ];
   },
 
@@ -1384,8 +1385,8 @@ export const api = {
           row.current_stock >= row.reorder_level
             ? 'safe'
             : row.current_stock >= row.reorder_level * 0.5
-            ? 'low'
-            : 'reorder';
+              ? 'low'
+              : 'reorder';
         return {
           id: String(row.item_id),
           name: row.item_name,
@@ -1408,8 +1409,8 @@ export const api = {
           item.current_stock >= pred.reorder_level
             ? 'safe'
             : item.current_stock >= pred.reorder_level * 0.5
-            ? 'low'
-            : 'reorder';
+              ? 'low'
+              : 'reorder';
         return {
           id: item.id,
           name: item.name,
@@ -1455,7 +1456,7 @@ export const api = {
   // ── Digital Twin Map ─────────────────────────────────────────────────────
   async getDigitalTwinAssets(params?: { labId?: string; department?: string; asset_type?: string }): Promise<MapAsset[]> {
     const qs = new URLSearchParams();
-    if (params?.labId)      qs.set('lab_id',    params.labId);
+    if (params?.labId) qs.set('lab_id', params.labId);
     if (params?.department) qs.set('department', params.department);
     if (params?.asset_type) qs.set('asset_type', params.asset_type);
     const path = `/digital-twin/assets${qs.toString() ? `?${qs}` : ''}`;
@@ -1475,9 +1476,9 @@ export const api = {
     action?: string;
   }): Promise<BlockchainBlock[]> {
     const qs = new URLSearchParams();
-    if (params?.limit  != null) qs.set('limit',  String(params.limit));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
     if (params?.offset != null) qs.set('offset', String(params.offset));
-    if (params?.action)         qs.set('action', params.action);
+    if (params?.action) qs.set('action', params.action);
     const path = `/blockchain/ledger${qs.toString() ? `?${qs}` : ''}`;
     const data = await backendGet<BlockchainBlock[]>(path);
     return data ?? [];

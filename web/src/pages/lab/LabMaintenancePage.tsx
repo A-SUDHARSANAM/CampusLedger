@@ -61,7 +61,7 @@ export function LabMaintenancePage() {
 
   useEffect(() => {
     loadData();
-    api.getLocations().then(setLocationsList).catch(() => {});
+    api.getLocations().then(setLocationsList).catch(() => { });
   }, [user?.labId]);
 
   // When location changes in modal, load assets for that location
@@ -149,8 +149,40 @@ export function LabMaintenancePage() {
             : <span className="ri-type-badge ri-type-service">Service Request</span>;
         },
       },
-      { key: 'labName', header: t('reportedBy', 'Reported By') },
-      { key: 'status', header: t('status', 'Status') },
+      {
+        key: 'status',
+        header: t('status', 'Status'),
+        render: (v) => {
+          const s = String(v ?? 'Pending');
+          const colors: Record<string, { bg: string; color: string }> = {
+            'Pending': { bg: 'rgba(234,179,8,.14)', color: '#ca8a04' },
+            'In Progress': { bg: 'rgba(59,130,246,.14)', color: '#2563eb' },
+            'Completed': { bg: 'rgba(34,197,94,.14)', color: '#16a34a' },
+          };
+          const c = colors[s] ?? { bg: 'rgba(148,163,184,.12)', color: '#64748b' };
+          return (
+            <span style={{
+              display: 'inline-block', padding: '2px 9px', borderRadius: 20,
+              fontSize: 11, fontWeight: 700, background: c.bg, color: c.color,
+              whiteSpace: 'nowrap',
+            }}>
+              {s}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'assignedTo',
+        header: t('assignedTo', 'Assigned To'),
+        render: (v) => v
+          ? (
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block', flexShrink: 0 }} />
+              {String(v)}
+            </span>
+          )
+          : <span style={{ opacity: 0.4, fontSize: 12 }}>Not yet assigned</span>,
+      },
       { key: 'priority', header: t('priority', 'Priority') },
       {
         key: 'qrCode',
@@ -325,8 +357,8 @@ export function LabMaintenancePage() {
                     {modalLoadingAssets
                       ? t('loadingAssets', 'Loading assets…')
                       : !modalLocationId
-                      ? t('selectLocationFirst', '— Select a location first —')
-                      : t('selectAssetPlaceholder', '— Select asset —')}
+                        ? t('selectLocationFirst', '— Select a location first —')
+                        : t('selectAssetPlaceholder', '— Select asset —')}
                   </option>
                   {modalLocationAssets.map((a) => (
                     <option key={a.id} value={a.id}>

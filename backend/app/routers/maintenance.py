@@ -69,6 +69,7 @@ class MaintenanceOut(BaseModel):
     # DB column names
     reported_by: Optional[str] = None
     assigned_staff: Optional[str] = None
+    assigned_staff_name: Optional[str] = None  # enriched from users
     issue_description: Optional[str] = None
     issue_type: Optional[str] = None
     priority: Optional[str] = None
@@ -93,7 +94,7 @@ def _remap(row: dict) -> dict:
 
 
 def _enrich_maintenance_rows(sb: Client, rows: List[dict]) -> List[dict]:
-    """Batch-fetch asset_name + lab_name and inject into each row."""
+    """Batch-fetch asset_name + lab_name + assigned_staff_name and inject into each row."""
     asset_ids = list({r["asset_id"] for r in rows if r.get("asset_id")})
     if not asset_ids:
         return rows
@@ -107,12 +108,21 @@ def _enrich_maintenance_rows(sb: Client, rows: List[dict]) -> List[dict]:
         labs_res = sb.table("labs").select("id, lab_name").in_("id", lab_ids).execute()
         lab_map = {l["id"]: l["lab_name"] for l in (labs_res.data or [])}
 
+    # Batch-fetch assigned staff names
+    staff_ids = list({r.get("assigned_staff") for r in rows if r.get("assigned_staff")})
+    staff_map: dict = {}
+    if staff_ids:
+        staff_res = sb.table("users").select("id, name").in_("id", staff_ids).execute()
+        staff_map = {u["id"]: u.get("name", "") for u in (staff_res.data or [])}
+
     for row in rows:
         asset = asset_map.get(row.get("asset_id", ""), {})
-        row["asset_name"] = asset.get("asset_name")
-        row["lab_id"]     = asset.get("lab_id")
-        row["lab_name"]   = lab_map.get(asset.get("lab_id", ""))
+        row["asset_name"]          = asset.get("asset_name")
+        row["lab_id"]              = asset.get("lab_id")
+        row["lab_name"]            = lab_map.get(asset.get("lab_id", ""))
+        row["assigned_staff_name"] = staff_map.get(row.get("assigned_staff", ""), "")
     return rows
+
 
 
 class ReportRequest(BaseModel):
