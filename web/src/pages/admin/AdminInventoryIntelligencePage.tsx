@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BellRing, CheckCircle2, Edit2, RefreshCw, Brain, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { api } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip as RechartsTip, ResponsiveContainer,
+} from 'recharts';
 
 /* ─────────────────────────────────────────
    Types
@@ -32,7 +36,7 @@ const PALETTE = [
 ];
 
 /* ═══════════════════════════════════════
-   SVG Bar Chart
+   SVG Bar Chart (simple, single value)
 ═══════════════════════════════════════ */
 function BarChart({
   data,
@@ -104,6 +108,307 @@ function BarChart({
 
       <line x1={padL} y1={padT} x2={padL} y2={padT + innerH} className="cl-axis-line" />
     </svg>
+  );
+}
+
+/* ═══════════════════════════════════════
+   Recharts — Inventory Demand Chart
+═══════════════════════════════════════ */
+type GroupedChartPoint = {
+  label: string;
+  current: number;
+  predicted: number;
+  reorder: number;
+  risk: 'safe' | 'low' | 'reorder';
+};
+
+/* ── Custom tooltip ── */
+function DemandTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey: string; value: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const byKey: Record<string, number> = {};
+  payload.forEach((p) => { byKey[p.dataKey] = p.value; });
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface, #1e1e2e)',
+        border: '1px solid var(--border-color, #3a3a4d)',
+        borderRadius: 10,
+        padding: '11px 16px',
+        boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+        fontSize: '0.82rem',
+        minWidth: 215,
+      }}
+    >
+      <p
+        style={{
+          margin: '0 0 9px',
+          fontWeight: 700,
+          fontSize: '0.87rem',
+          borderBottom: '1px solid var(--border-color, #3a3a4d)',
+          paddingBottom: 7,
+        }}
+      >
+        {label}
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#4F6EF7', fontWeight: 600 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: '#4F6EF7', flexShrink: 0, display: 'inline-block' }} />
+            Current Stock
+          </span>
+          <strong>{byKey.current ?? '—'}</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#F97316', fontWeight: 600 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: '#F97316', flexShrink: 0, display: 'inline-block' }} />
+            Predicted Demand
+          </span>
+          <strong>{typeof byKey.predicted === 'number' ? byKey.predicted.toFixed(1) : '—'}</strong>
+        </div>
+        <div
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20,
+            borderTop: '1px dashed rgba(239,68,68,0.35)',
+            paddingTop: 7, marginTop: 1,
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#EF4444', fontWeight: 600 }}>
+            <svg width="16" height="10" style={{ flexShrink: 0 }}>
+              <line x1="0" y1="5" x2="16" y2="5" stroke="#EF4444" strokeWidth="2" strokeDasharray="4 2" />
+            </svg>
+            Reorder Level
+          </span>
+          <strong>{byKey.reorder ?? '—'}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main responsive Recharts component ── */
+function InventoryDemandChart({ data }: { data: GroupedChartPoint[] }) {
+  /* ── Filter / sort state ── */
+  const [riskFilter, setRiskFilter] = React.useState<'all' | 'safe' | 'low' | 'reorder'>('all');
+  const [sortBy, setSortBy] = React.useState<'criticality' | 'stock-asc' | 'stock-desc' | 'demand' | 'name'>('criticality');
+  const [search, setSearch] = React.useState('');
+
+  if (!data.length) return <div className="chart-empty-msg">No data available</div>;
+
+  /* ── Apply filter + sort ── */
+  const filtered = data
+    .filter((d) => riskFilter === 'all' || d.risk === riskFilter)
+    .filter((d) => !search.trim() || d.label.toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a, b) => {
+      if (sortBy === 'criticality') return (a.current - a.reorder) - (b.current - b.reorder);
+      if (sortBy === 'stock-asc')   return a.current - b.current;
+      if (sortBy === 'stock-desc')  return b.current - a.current;
+      if (sortBy === 'demand')      return b.predicted - a.predicted;
+      return a.label.localeCompare(b.label);
+    });
+
+  /* ── Shape for Recharts ── */
+  const chartData = filtered.map((d) => ({
+    name: d.label.length > 14 ? d.label.slice(0, 13) + '…' : d.label,
+    fullName: d.label,
+    current: d.current,
+    predicted: Math.round(d.predicted * 10) / 10,
+    reorder: d.reorder,
+    risk: d.risk,
+  }));
+
+  /* ── Pill button styles ── */
+  const pillBase: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '3px 11px', borderRadius: 20, fontSize: '0.74rem',
+    fontWeight: 600, cursor: 'pointer', border: '1.5px solid transparent',
+    transition: 'all 0.18s ease',
+    lineHeight: 1.5,
+  };
+  const pillConfig = {
+    all:     { label: 'All',       dot: '#6b7280', active: { background: '#6b7280', color: '#fff', borderColor: '#6b7280' }, inactive: { background: 'transparent', color: 'var(--text-muted,#6b7280)', borderColor: 'var(--border-color,#d1d5db)' } },
+    safe:    { label: 'Safe',      dot: '#22C55E', active: { background: '#dcfce7', color: '#16a34a', borderColor: '#22C55E' }, inactive: { background: 'transparent', color: 'var(--text-muted,#6b7280)', borderColor: 'var(--border-color,#d1d5db)' } },
+    low:     { label: 'Low Stock', dot: '#F59E0B', active: { background: '#fef9c3', color: '#b45309', borderColor: '#F59E0B' }, inactive: { background: 'transparent', color: 'var(--text-muted,#6b7280)', borderColor: 'var(--border-color,#d1d5db)' } },
+    reorder: { label: 'Reorder',   dot: '#EF4444', active: { background: '#fee2e2', color: '#b91c1c', borderColor: '#EF4444' }, inactive: { background: 'transparent', color: 'var(--text-muted,#6b7280)', borderColor: 'var(--border-color,#d1d5db)' } },
+  } as const;
+
+  return (
+    <div style={{ width: '100%' }}>
+
+      {/* ══ Filter bar ══ */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center',
+        gap: 10, padding: '0 2px 14px',
+        borderBottom: '1px solid var(--border-color, #e5e7eb)',
+        marginBottom: 12,
+      }}>
+
+        {/* Search box */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <svg
+            width="13" height="13" viewBox="0 0 20 20" fill="none"
+            style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.45 }}
+          >
+            <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="2" />
+            <line x1="12.5" y1="12.5" x2="17" y2="17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search item…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              paddingLeft: 26, paddingRight: 10, paddingTop: 4, paddingBottom: 4,
+              fontSize: '0.76rem', borderRadius: 8, width: 130,
+              border: '1.5px solid var(--border-color, #d1d5db)',
+              background: 'var(--bg-surface, #fff)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+            }}
+          />
+        </div>
+
+        {/* Risk filter pills */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(Object.keys(pillConfig) as Array<keyof typeof pillConfig>).map((key) => {
+            const cfg = pillConfig[key];
+            const isActive = riskFilter === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRiskFilter(key)}
+                style={{ ...pillBase, ...(isActive ? cfg.active : cfg.inactive) }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: cfg.dot, flexShrink: 0, display: 'inline-block' }} />
+                {cfg.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Sort dropdown */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted, #6b7280)', whiteSpace: 'nowrap' }}>Sort:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            style={{
+              fontSize: '0.76rem', padding: '3px 8px', borderRadius: 8,
+              border: '1.5px solid var(--border-color, #d1d5db)',
+              background: 'var(--bg-surface, #fff)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer', outline: 'none',
+            }}
+          >
+            <option value="criticality">Criticality ↑</option>
+            <option value="stock-asc">Stock Low → High</option>
+            <option value="stock-desc">Stock High → Low</option>
+            <option value="demand">Demand High → Low</option>
+            <option value="name">Name A → Z</option>
+          </select>
+        </div>
+
+        {/* Item count badge */}
+        <span style={{
+          fontSize: '0.72rem', padding: '2px 9px', borderRadius: 20,
+          background: 'var(--bg-muted-2, #f3f4f6)',
+          color: 'var(--text-muted, #6b7280)',
+          fontWeight: 600, flexShrink: 0,
+          border: '1px solid var(--border-color, #e5e7eb)',
+        }}>
+          {filtered.length} / {data.length} items
+        </span>
+      </div>
+
+      {/* ── Legend ── */}
+      <div style={{ display: 'flex', gap: 18, justifyContent: 'flex-end', padding: '0 8px 10px', flexWrap: 'wrap' }}>
+        {(
+          [
+            { color: '#4F6EF7', label: 'Current Stock',    type: 'box'  },
+            { color: '#F97316', label: 'Predicted Demand', type: 'box'  },
+            { color: '#EF4444', label: 'Reorder Level',    type: 'dash' },
+          ] as const
+        ).map((item) => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.76rem' }}>
+            {item.type === 'box' ? (
+              <div style={{ width: 12, height: 10, borderRadius: 2, background: item.color, flexShrink: 0 }} />
+            ) : (
+              <svg width="20" height="10" style={{ flexShrink: 0 }}>
+                <line x1="1" y1="5" x2="19" y2="5" stroke={item.color} strokeWidth="2" strokeDasharray="5 3" />
+              </svg>
+            )}
+            <span style={{ color: 'var(--text-muted, #6b7280)' }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Empty state after filtering ── */}
+      {chartData.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5, fontSize: '0.88rem' }}>
+          No items match the current filter.
+        </div>
+      ) : (
+        /* ── Vertical grouped bar chart ── */
+        <ResponsiveContainer width="100%" height={360}>
+          <ComposedChart
+            data={chartData}
+            margin={{ top: 8, right: 20, left: 0, bottom: 72 }}
+            barGap={3}
+            barCategoryGap="30%"
+          >
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color, #e5e7eb)" opacity={0.6} />
+
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: 'var(--text-primary, #374151)', fontWeight: 500 }}
+              tickLine={false}
+              axisLine={{ stroke: 'var(--border-color, #e5e7eb)' }}
+              interval={0}
+              angle={-40}
+              textAnchor="end"
+              height={68}
+            />
+
+            <YAxis
+              tick={{ fontSize: 11, fill: 'var(--text-muted, #6b7280)' }}
+              axisLine={false}
+              tickLine={false}
+              width={36}
+              label={{ value: 'Qty', angle: -90, position: 'insideLeft', offset: 8, fontSize: 11, fill: 'var(--text-muted, #6b7280)' }}
+            />
+
+            <RechartsTip
+              content={(props) => {
+                type PL = Array<{ dataKey: string; value: number; payload: { fullName: string } }>;
+                const pl = (props.payload as unknown as PL) ?? [];
+                const fullName = pl.length ? pl[0].payload.fullName : String(props.label ?? '');
+                return <DemandTooltip active={props.active} payload={pl} label={fullName} />;
+              }}
+              cursor={{ fill: 'rgba(79,110,247,0.07)' }}
+            />
+
+            <Bar dataKey="current" name="Current Stock" fill="#4F6EF7" barSize={10} radius={[4, 4, 0, 0]} animationBegin={0} animationDuration={800} animationEasing="ease-out" />
+            <Bar dataKey="predicted" name="Predicted Demand" fill="#F97316" barSize={10} radius={[4, 4, 0, 0]} animationBegin={160} animationDuration={800} animationEasing="ease-out" />
+            <Line dataKey="reorder" name="Reorder Level" stroke="#EF4444" strokeWidth={2} strokeDasharray="6 4"
+              dot={{ r: 3.5, fill: '#EF4444', stroke: '#fff', strokeWidth: 1.5 }}
+              activeDot={{ r: 5.5, fill: '#EF4444', stroke: '#fff', strokeWidth: 2 }}
+              animationBegin={300} animationDuration={820}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
+    </div>
   );
 }
 
@@ -690,11 +995,16 @@ export function AdminInventoryIntelligencePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [predictions]);
 
-  // Chart data derived from predictions
-  const demandChartData: ChartPoint[] = predictions.map((p) => ({
-    label: p.name,
-    value: p.predicted_demand,
-  }));
+  // Chart data derived from predictions — sorted by stock buffer ascending (most critical first)
+  const demandChartData: GroupedChartPoint[] = [...predictions]
+    .sort((a, b) => (a.current_stock - a.reorder_level) - (b.current_stock - b.reorder_level))
+    .map((p) => ({
+      label: p.name,
+      current: p.current_stock,
+      predicted: p.predicted_demand,
+      reorder: p.reorder_level,
+      risk: p.risk,
+    }));
 
   const riskCounts = predictions.reduce(
     (acc, p) => {
@@ -809,11 +1119,11 @@ export function AdminInventoryIntelligencePage() {
           {/* Charts row */}
           <div className="chart-grid chart-grid-balanced">
             <ChartCard
-              title={t('predictedDemand', 'Predicted Demand by Item')}
-              subtitle={t('nextMonthForecast', 'Next month ML forecast')}
+              title={t('predictedDemand', 'Stock vs Predicted Demand')}
+              subtitle={t('nextMonthForecast', 'Sorted by criticality — hover a bar for details')}
               delay={400} animate={animate}
             >
-              <BarChart data={demandChartData} multiColor height={220} labelRotate />
+              <InventoryDemandChart data={demandChartData} />
             </ChartCard>
 
             <ChartCard

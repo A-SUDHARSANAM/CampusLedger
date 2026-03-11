@@ -52,6 +52,7 @@ class ForecastSummary(BaseModel):
     assets_expiring: int
     estimated_replacement_cost: float
     inflation_rate: float
+    ml_powered: bool = False
 
 
 class CategoryForecast(BaseModel):

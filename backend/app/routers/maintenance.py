@@ -13,6 +13,7 @@ from app.services.storage_service import upload_file, Bucket
 from app.services.notification_service import (
     notify_issue_raised, notify_staff_assigned, notify_maintenance_completed,
 )
+from app.services.blockchain_service import record_event as _bc_record
 
 _logger = logging.getLogger(__name__)
 
@@ -169,12 +170,12 @@ class StaffRecommendation(BaseModel):
     "/report",
     response_model=MaintenanceOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Report a maintenance issue (lab technician)",
+    summary="Report a maintenance issue (lab technician or admin)",
 )
 def report_issue(
     payload: ReportRequest,
     sb: Client = Depends(get_admin_client),
-    current_user: dict = Depends(_require_lab_tech),
+    current_user: dict = Depends(require_role("admin", "lab_technician")),
 ):
     if payload.priority not in VALID_PRIORITIES:
         raise HTTPException(
@@ -204,6 +205,15 @@ def report_issue(
         notify_issue_raised(sb, row["id"], payload.priority)
     except Exception:
         pass
+    # ── blockchain: MAINTENANCE_RAISED ──────────────────────────────────
+    _bc_record(
+        sb,
+        asset_id=str(payload.asset_id),
+        asset_name=str(row.get("asset_name") or payload.asset_id),
+        action="MAINTENANCE_RAISED",
+        performed_by=current_user.get("email") or current_user.get("role", "lab_technician"),
+        extra_data={"priority": payload.priority, "issue_type": payload.issue_type, "description": payload.description[:120]},
+    )
     return row
 
 
@@ -423,16 +433,13 @@ def assign_request(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot reassign a completed request")
 
     # Verify assignee exists and is service_staff
-    user_res = (
-        sb.table("users")
-        .select("id, roles(role_name)")
-        .eq("id", payload.assigned_to_id)
-        .maybe_single()
-        .execute()
-    )
+    # Use two-step lookup to avoid FK join failures from Supabase schema cache misses
+    user_res = sb.table("users").select("id, role_id").eq("id", payload.assigned_to_id).maybe_single().execute()
     if not user_res.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignee not found")
-    assignee_role = (user_res.data.get("roles") or {}).get("role_name", "")
+    role_id = user_res.data.get("role_id", "")
+    role_row = sb.table("roles").select("role_name").eq("id", role_id).maybe_single().execute()
+    assignee_role = (role_row.data or {}).get("role_name", "")
     if assignee_role != "service_staff":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assignee must be a service_staff member")
 

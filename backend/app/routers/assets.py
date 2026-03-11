@@ -292,10 +292,10 @@ def create_asset(
     _bc_record(
         sb,
         asset_id=str(asset.get("id", "")),
-        asset_name=enriched.asset_name,
+        asset_name=enriched.get("asset_name", ""),
         action="ASSET_CREATED",
         performed_by="admin",
-        extra_data={"category": enriched.category, "lab": enriched.lab_name, "status": enriched.status},
+        extra_data={"category": enriched.get("category"), "lab": enriched.get("lab_name"), "status": enriched.get("status")},
     )
     return enriched
 
@@ -385,10 +385,10 @@ def update_asset(
     _bc_record(
         sb,
         asset_id=asset_id,
-        asset_name=enriched.asset_name,
+        asset_name=enriched.get("asset_name", ""),
         action=action,
         performed_by=current_user.get("email") or current_user.get("role", "user"),
-        extra_data={"changed_fields": list(update_data.keys()), "new_status": update_data.get("status"), "new_lab": enriched.lab_name},
+        extra_data={"changed_fields": list(update_data.keys()), "new_status": update_data.get("status"), "new_lab": enriched.get("lab_name")},
     )
     return enriched
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an asset (admin only)")

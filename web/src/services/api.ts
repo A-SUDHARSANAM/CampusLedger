@@ -210,6 +210,32 @@ async function backendPostOrThrow<T>(path: string, body: unknown): Promise<T> {
   throw new Error(extractDetail(data, `Request failed (${res.status})`));
 }
 
+/** Like backendPut but throws a user-readable error on non-2xx responses. */
+async function backendPutOrThrow<T>(path: string, body: unknown = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
+  } catch {
+    throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+  }
+  if (res.status === 401) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      try {
+        res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
+      } catch {
+        throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+      }
+    } else {
+      handleUnauthorized();
+    }
+  }
+  if (res.status === 401) handleUnauthorized();
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return data as T;
+  throw new Error(extractDetail(data, `Request failed (${res.status})`));
+}
+
 async function backendPut<T>(path: string, body: unknown = {}): Promise<T | null> {
   try {
     let res = await backendFetch(path, { method: 'PUT', body: JSON.stringify(body) });
@@ -912,7 +938,7 @@ export const api = {
 
   // ── Maintenance ───────────────────────────────────────────────────────────
   async getMaintenanceRequests(role: Role, labId?: string): Promise<MaintenanceRequest[]> {
-    const data = await backendGet<Record<string, unknown>[]>('/maintenance');
+    const data = await backendGet<Record<string, unknown>[]>('/maintenance/');
     if (data) return data.map(adaptMaintenance);
     if (role === 'lab') return delay(maintenanceRequests.filter((r) => r.labId === labId));
     if (role === 'service') return delay(maintenanceRequests.filter((r) => r.assignedTo));
@@ -928,36 +954,16 @@ export const api = {
 
   async assignMaintenanceRequest(role: Role, requestId: string, assignee: string): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:assign');
-    const data = await backendPut<Record<string, unknown>>(`/maintenance/${requestId}/assign`, { assigned_to_id: assignee });
-    if (data) return adaptMaintenance(data);
-    const index = maintenanceRequests.findIndex((r) => r.requestId === requestId || r.id === requestId);
-    if (index < 0) throw new Error('Maintenance request not found.');
-    const current = maintenanceRequests[index];
-    const updated: MaintenanceRequest = {
-      ...current, assignedTo: assignee, status: 'In Progress',
-      history: [...current.history, nextMaintenanceHistoryEntry('Admin', 'Assigned', `Assigned to ${assignee}`)]
-    };
-    maintenanceRequests[index] = updated;
-    return delay(updated);
+    const data = await backendPutOrThrow<Record<string, unknown>>(`/maintenance/${requestId}/assign`, { assigned_to_id: assignee });
+    return adaptMaintenance(data);
   },
 
   async updateMaintenanceStatus(role: Role, requestId: string, status: MaintenanceStatus, remarks: string): Promise<MaintenanceRequest> {
     assertPermission(role, 'maintenance:update_status');
     const endpoint = status === 'Completed' ? `/maintenance/${requestId}/complete` : `/maintenance/${requestId}/progress`;
     const body = status === 'Completed' ? {} : { notes: remarks };
-    const data = await backendPut<Record<string, unknown>>(endpoint, body);
-    if (data) return adaptMaintenance(data);
-    const index = maintenanceRequests.findIndex((r) => r.requestId === requestId || r.id === requestId);
-    if (index < 0) throw new Error('Maintenance request not found.');
-    const current = maintenanceRequests[index];
-    if (!canTransition(current.status, status)) throw new Error(`Invalid status transition from ${current.status} to ${status}.`);
-    const updated: MaintenanceRequest = {
-      ...current, status,
-      history: [...current.history, nextMaintenanceHistoryEntry('Service', status, remarks)]
-    };
-    maintenanceRequests[index] = updated;
-    assets = assets.map((a) => (a.id === updated.assetId ? { ...a, status: status === 'Completed' ? 'Active' : 'Under Maintenance' } : a));
-    return delay(updated);
+    const data = await backendPutOrThrow<Record<string, unknown>>(endpoint, body);
+    return adaptMaintenance(data);
   },
 
   /** Fetch the QR code for an assigned maintenance request (admin only). */
@@ -1492,6 +1498,31 @@ export const api = {
   async verifyBlockchain(): Promise<{ intact: boolean; total_blocks: number; first_broken_index: number | null; message: string }> {
     const data = await backendGet<{ intact: boolean; total_blocks: number; first_broken_index: number | null; message: string }>('/blockchain/verify');
     return data ?? { intact: false, total_blocks: 0, first_broken_index: null, message: 'Verification failed.' };
+  },
+
+  async getBlockchainStats(): Promise<{
+    total_events: number;
+    assets_created: number;
+    transferred: number;
+    disposed: number;
+    maintenance_raised: number;
+    maintenance_done: number;
+    procurement: number;
+  }> {
+    const data = await backendGet<{
+      total_events: number;
+      assets_created: number;
+      transferred: number;
+      disposed: number;
+      maintenance_raised: number;
+      maintenance_done: number;
+      procurement: number;
+    }>('/blockchain/stats');
+    return data ?? { total_events: 0, assets_created: 0, transferred: 0, disposed: 0, maintenance_raised: 0, maintenance_done: 0, procurement: 0 };
+  },
+
+  async seedBlockchainDemo(): Promise<{ seeded: boolean; blocks_added: number; message: string }> {
+    return backendPostOrThrow<{ seeded: boolean; blocks_added: number; message: string }>('/blockchain/seed-demo', {});
   },
 
   // ── QR Tracking ──────────────────────────────────────────────────────────

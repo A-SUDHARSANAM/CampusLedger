@@ -10,6 +10,7 @@ from app.db.supabase import get_admin_client
 from app.services.storage_service import upload_file, Bucket
 from app.services.notification_service import notify_purchase_decision
 from app.services.ocr_service import extract_invoice_data
+from app.services.blockchain_service import record_event as _bc_record
 
 router = APIRouter(prefix="/purchase", tags=["Purchase"])
 
@@ -235,6 +236,19 @@ def create_order(
     }
     result = sb.table("purchase_requests").update(update).eq("id", payload.request_id).execute()
     row = result.data[0]
+    # ── blockchain: PROCUREMENT ─────────────────────────────────────────
+    _bc_record(
+        sb,
+        asset_id=str(payload.request_id),
+        asset_name=str(row.get("item_name", "Purchase Order")),
+        action="PROCUREMENT",
+        performed_by=current_user.get("email") or current_user.get("role", "purchase_dept"),
+        extra_data={
+            "purchase_department": payload.purchase_department_name,
+            "expected_delivery":   payload.expected_delivery_date,
+            "quantity":            row.get("quantity"),
+        },
+    )
     return _enrich(row, purchase_department_name=payload.purchase_department_name)
 
 

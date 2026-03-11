@@ -8,6 +8,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
+import { DashBarChart, DashLineChart } from '../../components/charts';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1';
 
@@ -19,6 +20,7 @@ interface ForecastSummary {
   assets_expiring: number;
   estimated_replacement_cost: number;
   inflation_rate: number;
+  ml_powered?: boolean;
 }
 
 interface CategoryForecast {
@@ -57,7 +59,9 @@ function fmtFull(n: number): string {
 }
 
 function authHeader(): Record<string, string> {
-  const token = localStorage.getItem('authToken');
+  const token =
+    localStorage.getItem('campusledger_token') ??
+    localStorage.getItem('authToken');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -272,7 +276,7 @@ export function FinanceForecastPage() {
 
   const cats = Array.from(new Set(assets.map((a) => a.category)));
 
-  const timelineChartData = timeline.map((t) => ({ x: String(t.year), y: t.estimated_cost }));
+  const timelineChartData = timeline.map((t) => ({ label: String(t.year), value: t.estimated_cost }));
   const categoryBarData = categories.map((c) => ({
     label: c.category,
     value: c.estimated_cost,
@@ -291,6 +295,23 @@ export function FinanceForecastPage() {
           <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <TrendingUp size={26} />
             {t('financeForecast', 'Financial Planning & Budget Forecast')}
+            {summary?.ml_powered && (
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  background: 'linear-gradient(135deg,#4F6EF7,#A78BFA)',
+                  color: '#fff',
+                  padding: '2px 8px',
+                  borderRadius: 20,
+                  verticalAlign: 'middle',
+                }}
+              >
+                ML Powered
+              </span>
+            )}
           </h2>
           <p>
             {t(
@@ -383,7 +404,7 @@ export function FinanceForecastPage() {
             <TrendingUp size={16} style={{ marginRight: 6 }} />
             Forecast Timeline (Year-by-Year)
           </h3>
-          <LineChart data={timelineChartData} color="#4F6EF7" currency />
+          <DashLineChart data={timelineChartData} currency />
         </div>
 
         {/* Cost by category */}
@@ -392,10 +413,8 @@ export function FinanceForecastPage() {
             <DollarSign size={16} style={{ marginRight: 6 }} />
             Replacement Cost by Category
           </h3>
-          <BarChart
+          <DashBarChart
             data={categoryBarData}
-            labelKey="label"
-            valueKey="value"
             multiColor
             currency
           />
@@ -407,12 +426,9 @@ export function FinanceForecastPage() {
             <BarChart2 size={16} style={{ marginRight: 6 }} />
             Assets Expiring by Category
           </h3>
-          <BarChart
+          <DashBarChart
             data={categoryCountData}
-            labelKey="label"
-            valueKey="value"
             color="#F59E0B"
-            multiColor={false}
           />
         </div>
 

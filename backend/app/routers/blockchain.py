@@ -197,3 +197,117 @@ def manual_record(
     if not row:
         raise HTTPException(status_code=500, detail="Block recorded but not retrievable")
     return _row_to_block(row[0])
+
+
+# ── GET /blockchain/stats ──────────────────────────────────────────────────────
+
+class StatsOut(BaseModel):
+    total_events: int
+    assets_created: int
+    transferred: int
+    disposed: int
+    maintenance_raised: int
+    maintenance_done: int
+    procurement: int
+
+
+@router.get(
+    "/stats",
+    response_model=StatsOut,
+    summary="Count of blockchain events per action type",
+)
+def get_stats(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_any),
+):
+    """
+    Returns aggregate counts for the most important action types.
+    Computed server-side so the frontend dashboard is always accurate
+    regardless of pagination.
+    """
+    try:
+        rows = (
+            sb.table(TABLE)
+            .select("action")
+            .execute()
+            .data or []
+        )
+        total = len(rows)
+        counts: dict[str, int] = {}
+        for r in rows:
+            a = str(r.get("action", ""))
+            counts[a] = counts.get(a, 0) + 1
+        return StatsOut(
+            total_events=total,
+            assets_created=counts.get("ASSET_CREATED", 0),
+            transferred=counts.get("ASSET_TRANSFERRED", 0),
+            disposed=counts.get("ASSET_DISPOSED", 0),
+            maintenance_raised=counts.get("MAINTENANCE_RAISED", 0),
+            maintenance_done=counts.get("MAINTENANCE_DONE", 0),
+            procurement=counts.get("PROCUREMENT", 0),
+        )
+    except Exception as exc:
+        _logger.error("get_stats failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── POST /blockchain/seed-demo ─────────────────────────────────────────────────
+
+_DEMO_EVENTS = [
+    ("asset-001", "Dell Latitude 5540 Laptop",          "ASSET_CREATED",       "admin@campus.edu",    {"lab": "CS Electronics Lab",        "serial": "DL5540-001",    "value_inr": 72000}),
+    ("asset-002", "Rigol DS1054Z Oscilloscope",         "ASSET_CREATED",       "admin@campus.edu",    {"lab": "Advanced Electronics Lab",  "serial": "RG-DS1054-007", "value_inr": 38500}),
+    ("asset-003", "Raspberry Pi 4 Kit",                 "PROCUREMENT",         "purchase@campus.edu", {"quantity": 5, "supplier": "CoolComponents India", "po_number": "PO-2025-0042", "total_inr": 22000}),
+    ("asset-004", "Epson EB-X51 Projector",             "ASSET_CREATED",       "admin@campus.edu",    {"lab": "Mechanical Workshop",        "serial": "EP-EB-X51-003", "value_inr": 55000}),
+    ("asset-005", "Keysight U1241C Multimeter",         "ASSET_CREATED",       "admin@campus.edu",    {"lab": "Physics Optics Lab",         "serial": "KS-U1241-012",  "value_inr": 18500}),
+    ("asset-001", "Dell Latitude 5540 Laptop",          "MAINTENANCE_RAISED",  "technician@campus.edu", {"issue": "Fan making loud noise, thermal throttling observed", "priority": "High"}),
+    ("asset-002", "Rigol DS1054Z Oscilloscope",         "ASSET_TRANSFERRED",   "lab_tech@campus.edu", {"from_lab": "Advanced Electronics Lab", "to_lab": "CS Electronics Lab", "reason": "Student project requirement"}),
+    ("asset-006", "HP LaserJet Pro M404n",              "PROCUREMENT",         "purchase@campus.edu", {"quantity": 2, "supplier": "HP Authorized Reseller", "po_number": "PO-2025-0051", "total_inr": 42000}),
+    ("asset-001", "Dell Latitude 5540 Laptop",          "MAINTENANCE_DONE",    "service@campus.edu",  {"resolution": "Replaced thermal paste and cleaned fan.", "cost_inr": 850, "downtime_days": 3}),
+    ("asset-004", "Epson EB-X51 Projector",             "ASSET_UPDATED",       "admin@campus.edu",    {"field": "status", "old_value": "Active", "new_value": "Under Repair"}),
+    ("asset-007", "Rohde & Schwarz Spectrum Analyzer",  "PROCUREMENT",         "purchase@campus.edu", {"quantity": 1, "supplier": "Rohde & Schwarz India", "po_number": "PO-2025-0063", "total_inr": 485000}),
+    ("asset-007", "Rohde & Schwarz Spectrum Analyzer",  "ASSET_CREATED",       "admin@campus.edu",    {"lab": "Network & Security Lab", "serial": "RS-SA-4007", "value_inr": 485000}),
+    ("asset-003", "Raspberry Pi 4 Kit",                 "MAINTENANCE_RAISED",  "lab_tech@campus.edu", {"issue": "Two units not booting — SD card corruption", "priority": "Medium"}),
+    ("asset-008", "IBM ThinkCentre M720q Desktop",      "ASSET_DISPOSED",      "admin@campus.edu",    {"reason": "End of life", "disposal_method": "e-Waste recycling", "book_value_inr": 0}),
+    ("asset-003", "Raspberry Pi 4 Kit",                 "MAINTENANCE_DONE",    "service@campus.edu",  {"resolution": "Replaced SD cards, re-flashed OS.", "cost_inr": 400, "units_repaired": 2}),
+    ("asset-007", "Rohde & Schwarz Spectrum Analyzer",  "ASSET_TRANSFERRED",   "lab_tech@campus.edu", {"from_lab": "Network & Security Lab", "to_lab": "Advanced Electronics Lab", "reason": "Semester reassignment"}),
+]
+
+
+class SeedDemoOut(BaseModel):
+    seeded: bool
+    blocks_added: int
+    message: str
+
+
+@router.post(
+    "/seed-demo",
+    response_model=SeedDemoOut,
+    status_code=status.HTTP_200_OK,
+    summary="Insert demo blockchain events (authenticated users only)",
+)
+def seed_demo(
+    sb: Client = Depends(get_admin_client),
+    _: dict = Depends(_require_any),
+):
+    """
+    Inserts 16 realistic demo blockchain events so the audit page has
+    something to display in development / demo environments.
+    Idempotent: if the chain already has more than 1 block (beyond the
+    genesis) the endpoint does nothing and returns seeded=False.
+    """
+    try:
+        count_res = sb.table(TABLE).select("id", count="exact").execute()
+        total = count_res.count if count_res.count is not None else len(count_res.data or [])
+        if total >= 17:
+            return SeedDemoOut(seeded=False, blocks_added=0, message="Demo data already exists — seed skipped.")
+
+        added = 0
+        for asset_id, asset_name, action, performed_by, extra_data in _DEMO_EVENTS:
+            h = record_event(sb, asset_id, asset_name, action, performed_by, extra_data)
+            if h:
+                added += 1
+
+        return SeedDemoOut(seeded=True, blocks_added=added, message=f"Seeded {added} demo blocks successfully.")
+    except Exception as exc:
+        _logger.error("seed_demo failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
