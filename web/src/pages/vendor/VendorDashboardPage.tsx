@@ -3,6 +3,7 @@ import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { ProcurementRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 export function VendorDashboardPage() {
   const { t } = useLanguage();
@@ -16,6 +17,8 @@ export function VendorDashboardPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useAutoRefresh(load);
 
   const columns: TableColumn<ProcurementRequest>[] = useMemo(
     () => [

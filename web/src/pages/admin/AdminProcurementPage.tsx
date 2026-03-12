@@ -3,6 +3,7 @@ import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { MaintenanceRequest, ProcurementRequest, UserRecord } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 export function AdminProcurementPage() {
   const { t } = useLanguage();
@@ -29,6 +30,8 @@ export function AdminProcurementPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useAutoRefresh(load);
 
   /** Resolve a service-staff UUID to a human-readable name. */
   function resolveStaffName(id?: string): string {

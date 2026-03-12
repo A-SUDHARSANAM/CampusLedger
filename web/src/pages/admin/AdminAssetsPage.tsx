@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import type { Asset, LocationInfo } from '../../types/domain';
 import type { LabInfo } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 const ASSET_STATUSES = ['Active', 'Under Maintenance', 'Damaged'] as const;
 
@@ -86,6 +87,8 @@ export function AdminAssetsPage() {
     api.getDepartments().then(setDepartmentsList).catch(() => {});
     api.getLocations().then(setLocationsList).catch(() => {});
   }, []);
+
+  useAutoRefresh(() => loadAssets().catch(() => {}));
 
   function openAddModal() {
     setForm({ ...EMPTY_FORM });

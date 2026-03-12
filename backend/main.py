@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.routers import (
+    asset_utilization_router,
     auth_routes_router,
     users_router,
     labs_router,
@@ -115,7 +116,8 @@ app.include_router(qr_tracking_router,       prefix=API_PREFIX)
 app.include_router(rfid_router,              prefix=API_PREFIX)
 app.include_router(tasks_router,             prefix=API_PREFIX)
 app.include_router(chatbot_router,           prefix=API_PREFIX)
-app.include_router(finance_router,           prefix=API_PREFIX)
+app.include_router(finance_router,               prefix=API_PREFIX)
+app.include_router(asset_utilization_router,     prefix=API_PREFIX)
 
 # ---------------------------------------------------------------------------
 # Health check

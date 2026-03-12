@@ -8,6 +8,7 @@ import { OCRScanner, type OCRResult } from '../../components/OCRScanner';
 import { api } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
 import { DashBarChart, DashLineChart, DashPieChart } from '../../components/charts';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 /* ───────────────────────────────────────────
    Types
@@ -270,6 +271,8 @@ export function AdminDashboardPage() {
     loadedRef.current = true;
     loadData();
   }, []);
+
+  useAutoRefresh(loadData);
 
   useEffect(() => {
     if (!loading) {

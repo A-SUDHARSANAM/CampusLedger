@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import type { BorrowItem, ElectronicsCatalogItem, ProcurementCategory, ProcurementRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 type RequirementLine = ElectronicsCatalogItem & { quantity: number };
 
@@ -19,8 +20,11 @@ export function LabProcurementPage() {
   const [status, setStatus] = useState('');
 
   async function load() {
-    if (!user?.labId) return;
-    const [catalogRows, reqRows] = await Promise.all([api.getElectronicsCatalog(), api.getProcurementRequests('lab', user.labId)]);
+    const labId = user?.labId;
+    const [catalogRows, reqRows] = await Promise.all([
+      api.getElectronicsCatalog(),
+      api.getProcurementRequests('lab', labId)
+    ]);
     setCatalog(catalogRows);
     setRequests(reqRows);
   }
@@ -28,6 +32,8 @@ export function LabProcurementPage() {
   useEffect(() => {
     load();
   }, [user?.labId]);
+
+  useAutoRefresh(load);
 
   function addToCart(item: ElectronicsCatalogItem) {
     setCart((prev) => {

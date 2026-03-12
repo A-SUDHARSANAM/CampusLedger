@@ -6,6 +6,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import type { Asset, LocationInfo, MaintenanceRequest, Priority } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 const PRIORITIES: Priority[] = ['Low', 'Medium', 'High'];
 
@@ -63,6 +64,8 @@ export function LabMaintenancePage() {
     loadData();
     api.getLocations().then(setLocationsList).catch(() => { });
   }, [user?.labId]);
+
+  useAutoRefresh(loadData);
 
   // When location changes in modal, load assets for that location.
   // If the location returns no assets (common when location ↔ asset mapping

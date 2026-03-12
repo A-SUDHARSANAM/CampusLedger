@@ -3,6 +3,7 @@ import { X, Wrench, UserCheck, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 import { useAuth } from '../../hooks/useAuth';
 import type { MaintenanceRequest, UserRecord } from '../../types/domain';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ export function MaintenancePage() {
     if (isAdmin) tasks.push(api.getServiceStaff().then(setServiceStaff));
     Promise.all(tasks).finally(() => setLoading(false));
   }, [role]);
+
+  useAutoRefresh(refresh);
 
   // ── filtering ──────────────────────────────────────────────────────────
   const filtered = requests.filter((r) => {

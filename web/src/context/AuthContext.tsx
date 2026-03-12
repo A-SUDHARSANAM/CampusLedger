@@ -10,6 +10,7 @@ type AuthContextType = {
   isAuthenticated: boolean;
   isBootstrapping: boolean;
   login: (email: string, password: string, selectedRole?: Role) => Promise<User>;
+  loginWithToken: (token: string, refreshToken: string) => Promise<User>;
   logout: () => void;
   hasPermission: (action: PermissionAction) => boolean;
 };
@@ -59,11 +60,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api.onUnauthorized(logout);
   }, []);
 
+  // Sync new tokens into React state whenever api.ts performs a reactive refresh
+  useEffect(() => {
+    api.onTokenRefreshed((newToken, newRefreshToken) => {
+      setState(prev => ({ ...prev, token: newToken, refreshToken: newRefreshToken }));
+    });
+  }, []);
+
+  // Proactively refresh the token every 8 minutes so it never expires mid-session
+  useEffect(() => {
+    const EIGHT_MINUTES = 8 * 60 * 1000;
+    const id = setInterval(() => {
+      if (state.token) api.proactiveRefresh();
+    }, EIGHT_MINUTES);
+    return () => clearInterval(id);
+  }, [!!state.token]);
+
   const login = async (email: string, password: string, selectedRole?: Role) => {
     const { token, refreshToken: rToken, user } = await api.login(email, password, selectedRole);
     api.setToken(token);
     api.setRefreshToken(rToken);
     setState({ token, refreshToken: rToken, user });
+    return user;
+  };
+
+  const loginWithToken = async (token: string, refreshToken: string) => {
+    const { token: t, refreshToken: rt, user } = await api.loginWithToken(token, refreshToken);
+    api.setToken(t);
+    api.setRefreshToken(rt);
+    setState({ token: t, refreshToken: rt, user });
     return user;
   };
 
@@ -75,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: !!state.user && !!state.token,
       isBootstrapping,
       login,
+      loginWithToken,
       logout,
       hasPermission: (action) => {
         if (!state.user) return false;

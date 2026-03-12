@@ -1,7 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { api } from '../../services/api';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+} from 'recharts';
+import { Activity, TrendingDown, TrendingUp, MapPin, AlertTriangle } from 'lucide-react';
+import { api, AssetUtilizationItem } from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../hooks/useAuth';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 type LabKpis = {
   myAssets: number;
@@ -29,26 +41,35 @@ export function LabDashboardPage() {
   const [loadingQueries, setLoadingQueries] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [utilization, setUtilization] = useState<{ month: string; items: AssetUtilizationItem[] } | null>(null);
 
   useEffect(() => {
     api.getLabKpis().then(setKpis);
-  }, []);
+    api.getAssetUtilization(user?.labId).then(setUtilization);
+  }, [user?.labId]);
 
-  const fetchQueries = (techId: string) => {
+  useAutoRefresh(() => {
+    api.getLabKpis().then(setKpis);
+    api.getAssetUtilization(user?.labId).then(setUtilization);
+  });
+
+  const fetchQueries = useCallback((techId: string) => {
     setLoadingQueries(true);
     api
       .getTechnicianStudentQueries(techId)
       .then((data) => setQueries(data as unknown as StudentQuery[]))
       .finally(() => setLoadingQueries(false));
-  };
+  }, []);
 
   useEffect(() => {
     if (user?.id) fetchQueries(user.id);
-  }, [user?.id]);
+  }, [user?.id, fetchQueries]);
 
   const refreshQueries = () => {
     if (user?.id) fetchQueries(user.id);
   };
+
+  useAutoRefresh(() => { if (user?.id) fetchQueries(user.id); });
 
   const handleReview = async (queryId: string, decision: 'valid' | 'invalid') => {
     setActionLoading(queryId + decision);
@@ -185,6 +206,127 @@ export function LabDashboardPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Asset Utilization Intelligence */}
+      {utilization && <AssetUtilizationSection data={utilization} />}
+    </div>
+  );
+}
+
+// ── Asset Utilization Intelligence panel ─────────────────────────────────────
+
+function statusCls(s: AssetUtilizationItem['status']) {
+  if (s === 'high_usage') return 'high-usage';
+  if (s === 'underused')  return 'underused';
+  return 'optimal';
+}
+
+function StatusIcon({ status }: { status: AssetUtilizationItem['status'] }) {
+  if (status === 'high_usage') return <TrendingUp size={11} />;
+  if (status === 'underused')  return <TrendingDown size={11} />;
+  return <Activity size={11} />;
+}
+
+function StatusLabel({ status }: { status: AssetUtilizationItem['status'] }) {
+  if (status === 'high_usage') return <>High Usage</>;
+  if (status === 'underused')  return <>Underused</>;
+  return <>Optimal</>;
+}
+
+function AssetUtilizationSection({ data }: { data: { month: string; items: AssetUtilizationItem[] } }) {
+  const items = data.items;
+  const optimal   = items.filter((i) => i.status === 'normal').length;
+  const underused = items.filter((i) => i.status === 'underused').length;
+  const highUsage = items.filter((i) => i.status === 'high_usage').length;
+
+  const chartData = items.map((i) => ({
+    name: i.asset_name.length > 16 ? i.asset_name.slice(0, 14) + '…' : i.asset_name,
+    hours: i.monthly_usage,
+    fill: i.status === 'high_usage' ? '#EF4444' : i.status === 'underused' ? '#F59E0B' : '#4F6EF7',
+  }));
+
+  return (
+    <div className="card util-section">
+      <div className="util-section-header">
+        <Activity size={20} color="var(--accent-primary, #4F6EF7)" />
+        <h3>Asset Utilization Intelligence</h3>
+        <span className="util-month-tag">{data.month}</span>
+      </div>
+
+      {/* KPI strip */}
+      <div className="util-kpi-strip">
+        <div className="util-kpi-tile optimal">
+          <span className="util-kpi-label">Optimal</span>
+          <span className="util-kpi-value">{optimal}</span>
+        </div>
+        <div className="util-kpi-tile underused">
+          <span className="util-kpi-label">Underused</span>
+          <span className="util-kpi-value">{underused}</span>
+        </div>
+        <div className="util-kpi-tile high-usage">
+          <span className="util-kpi-label">High Usage</span>
+          <span className="util-kpi-value">{highUsage}</span>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <div className="util-chart-wrapper">
+        <p className="util-chart-title">Monthly Usage Hours per Asset</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color, #e5e7eb)" />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
+              angle={-35}
+              textAnchor="end"
+              interval={0}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: 'var(--text-secondary)' }}
+              label={{ value: 'hrs', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 10, fill: 'var(--text-secondary)' } }}
+            />
+            <Tooltip
+              formatter={(v) => [`${v} hrs`, 'Usage']}
+              contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 8, fontSize: 12 }}
+            />
+            <Bar dataKey="hours" radius={[4, 4, 0, 0]}>
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Asset cards */}
+      <div className="util-cards-grid">
+        {items.map((item) => {
+          const cls = statusCls(item.status);
+          return (
+            <div key={item.asset_id} className={`util-card ${cls}`}>
+              <div className="util-card-header">
+                <span className="util-card-name">{item.asset_name}</span>
+                <span className={`util-badge ${cls}`}>
+                  <StatusIcon status={item.status} />
+                  <StatusLabel status={item.status} />
+                </span>
+              </div>
+              <div className="util-card-usage">
+                {item.monthly_usage}<span>hrs / month</span>
+              </div>
+              {item.recommendation && (
+                <div className="util-card-rec">
+                  {item.status === 'underused'
+                    ? <MapPin size={12} color="var(--warning, #F59E0B)" />
+                    : <AlertTriangle size={12} color="var(--danger, #EF4444)" />}
+                  {item.recommendation}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

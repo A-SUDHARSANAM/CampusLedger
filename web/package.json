@@ -9,10 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
+    "framer-motion": "^12.35.2",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.575.0",
     "react": "^19.2.4",
+    "react-countup": "^6.5.3",
     "react-dom": "^19.2.4",
+    "react-loading-skeleton": "^3.5.0",
     "react-router-dom": "^7.13.1",
     "recharts": "^3.8.0"
   },
@@ -20,6 +24,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
-    "playwright": "^1.58.2"
+    "playwright": "^1.58.2",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

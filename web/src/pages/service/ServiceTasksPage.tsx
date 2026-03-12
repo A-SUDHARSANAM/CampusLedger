@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { api } from '../../services/api';
 import type { MaintenanceRequest, MaintenanceStatus } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 // ─── QR scan helpers ──────────────────────────────────────────────────────────
 type MaintenanceQRPayload = {
@@ -55,6 +56,8 @@ export function ServiceTasksPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useAutoRefresh(load);
 
   async function handleStatusUpdate(row: MaintenanceRequest) {
     const status = nextStatus(row.status);

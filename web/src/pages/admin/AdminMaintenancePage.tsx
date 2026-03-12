@@ -4,6 +4,7 @@ import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { MaintenanceRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 // ── Priority helpers ─────────────────────────────────────────────────────────
 const PRIORITY_WEIGHT: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
@@ -80,6 +81,7 @@ export function AdminMaintenancePage() {
   }
 
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
 
   async function startAssigning(row: MaintenanceRequest) {
     setAssigningId(row.id);

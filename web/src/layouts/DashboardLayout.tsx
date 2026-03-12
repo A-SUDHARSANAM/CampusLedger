@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
 import { SIDEBAR_ITEMS } from '../routes/routeConfig';
@@ -8,6 +9,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { api } from '../services/api';
 import type { Notification } from '../types/domain';
 import ChatbotWidget from '../components/chatbot/ChatbotWidget';
+import { InstallAppButton } from '../components/InstallAppButton';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 function initials(name?: string) {
   if (!name) return 'U';
@@ -166,6 +169,20 @@ export function DashboardLayout() {
     return navLabel(match?.label ?? 'Dashboard');
   }, [location.pathname, navItems, t, language]);
 
+  const { permission, requestPermission, sendLowStockAlert, sendMaintenanceAlert, sendProcurementAlert } = usePushNotifications();
+  const [pushMenuOpen, setPushMenuOpen] = useState(false);
+
+  // Close push menu when clicking outside
+  useEffect(() => {
+    if (!pushMenuOpen) return;
+    function handleOutside(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.push-notif-wrapper')) setPushMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [pushMenuOpen]);
+
   return (
     <div className={`app-shell sleek-shell ${isCollapsed ? 'collapsed' : ''}`}>
       <button className="mobile-nav-toggle" type="button" aria-label="Toggle navigation menu" onClick={() => setIsMobileOpen((open) => !open)}>
@@ -181,7 +198,16 @@ export function DashboardLayout() {
       >
         <div className="sidebar-header brand-head">
           <div className="sidebar-brand">
-            <span className="sidebar-mark" />
+            <img
+              src="/logo.png"
+              alt="CampusLedger"
+              style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.12)', padding: 3, flexShrink: 0 }}
+            />
+            <img
+              src="/campus_logo.png"
+              alt="Campus"
+              style={{ width: 32, height: 32, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.12)', padding: 3, flexShrink: 0 }}
+            />
             <div>
               <h3 className="sidebar-title">CampusLedger</h3>
               <p className="sidebar-subtitle">Asset Manager</p>
@@ -301,6 +327,43 @@ export function DashboardLayout() {
             <button className="icon-btn" type="button" onClick={toggleTheme} aria-label="Toggle theme">
               {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             </button>
+
+            {/* PWA install button — shows when browser install prompt is available */}
+            <InstallAppButton />
+
+            {/* Push notifications toggle */}
+            <div className="push-notif-wrapper">
+              <button
+                type="button"
+                className={`icon-btn push-notif-btn${permission === 'granted' ? ' push-granted' : ''}`}
+                title={permission === 'granted' ? 'Push notifications enabled' : 'Enable push notifications'}
+                aria-label="Push notifications"
+                onClick={() => {
+                  if (permission === 'default') {
+                    requestPermission();
+                  } else if (permission === 'granted') {
+                    setPushMenuOpen((o) => !o);
+                  }
+                }}
+              >
+                <span style={{ fontSize: 15 }}>{permission === 'granted' ? '🔔' : '🔕'}</span>
+              </button>
+              {pushMenuOpen && permission === 'granted' && (
+                <div className="push-menu" role="menu">
+                  <p className="push-menu-title">Test Push Notifications</p>
+                  <button type="button" className="push-menu-item" onClick={() => { sendLowStockAlert(); setPushMenuOpen(false); }}>
+                    ⚠️ Low Stock Alert
+                  </button>
+                  <button type="button" className="push-menu-item" onClick={() => { sendMaintenanceAlert(); setPushMenuOpen(false); }}>
+                    🔧 Maintenance Request
+                  </button>
+                  <button type="button" className="push-menu-item" onClick={() => { sendProcurementAlert(); setPushMenuOpen(false); }}>
+                    ✅ Procurement Approved
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button className="icon-btn bell-btn" type="button" aria-label="Notifications" onClick={() => setNotificationsOpen((open) => !open)}>
               <Bell size={16} />
               {unreadCount > 0 && <span className="notif-dot">{unreadCount}</span>}
@@ -389,8 +452,18 @@ export function DashboardLayout() {
           </div>
         </header>
 
-        <div className="page-body">
-          <Outlet />
+        <div className="page-body page-transition-outlet">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
       <ChatbotWidget />

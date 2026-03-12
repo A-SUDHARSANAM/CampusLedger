@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock, Link as LinkIcon, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import type { MaintenanceRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 const PRIORITY_COLOR: Record<string, string> = {
   Critical: '#DC2626', High: '#EF4444', Medium: '#F59E0B', Low: '#22C55E',
@@ -40,11 +41,14 @@ export function ServiceDashboardPage() {
   const [tasks, setTasks] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchTasks = useCallback(() => {
     api.getMaintenanceRequests('service')
       .then(setTasks)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  useAutoRefresh(fetchTasks);
 
   const pending    = tasks.filter((r) => r.status === 'Pending').length;
   const inProgress = tasks.filter((r) => r.status === 'In Progress').length;

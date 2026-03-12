@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import type { UserRecord } from '../../types/domain';
 import type { Role } from '../../types/auth';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 const ROLE_OPTIONS: Role[] = ['admin', 'lab', 'service', 'purchase_dept'];
 
@@ -20,6 +21,8 @@ export function AdminUsersPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useAutoRefresh(load);
 
   async function handleApprove(userId: string) {
     try {

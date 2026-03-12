@@ -22,6 +22,7 @@ from app.routers.rfid import router as rfid_router
 from app.routers.tasks import router as tasks_router
 from app.routers.chatbot import router as chatbot_router
 from app.routers.finance import router as finance_router
+from app.routers.asset_utilization import router as asset_utilization_router
 
 __all__ = [
     "auth_routes_router",
@@ -48,4 +49,5 @@ __all__ = [
     "tasks_router",
     "chatbot_router",
     "finance_router",
+    "asset_utilization_router",
 ]

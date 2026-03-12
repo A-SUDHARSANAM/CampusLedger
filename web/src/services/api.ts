@@ -92,6 +92,14 @@ export interface UsageSession {
   created_at: string;
 }
 
+export interface AssetUtilizationItem {
+  asset_id: string;
+  asset_name: string;
+  monthly_usage: number;
+  status: 'normal' | 'underused' | 'high_usage';
+  recommendation?: string;
+}
+
 // ── Configuration ─────────────────────────────────────────────────────────────
 const BASE_URL = '/api/v1';
 const TOKEN_STORAGE_KEY = 'campusledger_token';
@@ -101,6 +109,8 @@ let refreshToken: string | null = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY
 
 /** Called whenever any backend request returns 401 and token refresh also fails. */
 let _onUnauthorized: (() => void) | null = null;
+/** Called whenever a token refresh succeeds, so React state can sync the new tokens. */
+let _onTokenRefreshed: ((newToken: string, newRefreshToken: string) => void) | null = null;
 
 // Prevent multiple concurrent refresh attempts
 let _refreshPromise: Promise<boolean> | null = null;
@@ -121,6 +131,8 @@ async function tryRefreshToken(): Promise<boolean> {
       refreshToken = data.refresh_token;
       if (authToken) localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
       if (refreshToken) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+      // Notify AuthContext so React state stays in sync
+      if (authToken && refreshToken) _onTokenRefreshed?.(authToken, refreshToken);
       return true;
     } catch {
       return false;
@@ -491,10 +503,21 @@ let assets: Asset[] = [
 ];
 
 const electronicsCatalog: ElectronicsCatalogItem[] = [
-  { id: 'el-1', sku: 'ELEC-KIT-001', name: 'Arduino Uno R3', category: 'Microcontroller', unitCost: 1200, warrantyMonths: 12, inStock: 40 },
-  { id: 'el-2', sku: 'ELEC-SNS-002', name: 'Ultrasonic Sensor HC-SR04', category: 'Sensor', unitCost: 180, warrantyMonths: 6, inStock: 150 },
-  { id: 'el-3', sku: 'ELEC-DRV-003', name: 'L298N Motor Driver', category: 'Motor Driver', unitCost: 320, warrantyMonths: 6, inStock: 70 },
-  { id: 'el-4', sku: 'ELEC-RPI-004', name: 'Raspberry Pi 5', category: 'Embedded Board', unitCost: 7600, warrantyMonths: 12, inStock: 15 }
+  { id: 'el-1',  sku: 'ELEC-KIT-001', name: 'Arduino Uno R3',                     category: 'Microcontroller',     unitCost: 1200, warrantyMonths: 12, inStock: 40  },
+  { id: 'el-2',  sku: 'ELEC-SNS-002', name: 'Ultrasonic Sensor HC-SR04',          category: 'Sensor',              unitCost:  180, warrantyMonths:  6, inStock: 150 },
+  { id: 'el-3',  sku: 'ELEC-DRV-003', name: 'L298N Motor Driver',                 category: 'Motor Driver',        unitCost:  320, warrantyMonths:  6, inStock: 70  },
+  { id: 'el-4',  sku: 'ELEC-DSP-004', name: '16x2 LCD Display',                  category: 'Display',             unitCost:  280, warrantyMonths:  6, inStock: 60  },
+  { id: 'el-5',  sku: 'ELEC-CAB-005', name: 'Jumper Wires (40-pack)',             category: 'Cables & Connectors', unitCost:  120, warrantyMonths:  3, inStock: 200 },
+  { id: 'el-6',  sku: 'ELEC-PAS-006', name: 'Resistor Kit (600-pack)',            category: 'Passive Components',  unitCost:  350, warrantyMonths: 12, inStock: 50  },
+  { id: 'el-7',  sku: 'ELEC-RPI-007', name: 'Raspberry Pi 5',                    category: 'Embedded Board',      unitCost: 7600, warrantyMonths: 12, inStock: 8   },
+  { id: 'el-8',  sku: 'ELEC-BBD-008', name: 'Breadboard 830-pt',                 category: 'Prototyping',         unitCost:  150, warrantyMonths:  6, inStock: 18  },
+  { id: 'el-9',  sku: 'ELEC-SNS-009', name: 'DHT11 Temperature & Humidity Sensor', category: 'Sensor',            unitCost:  130, warrantyMonths:  6, inStock: 12  },
+  { id: 'el-10', sku: 'ELEC-MCU-010', name: 'ESP32 Wi-Fi Module',                category: 'Microcontroller',     unitCost:  950, warrantyMonths: 12, inStock: 35  },
+  { id: 'el-11', sku: 'ELEC-SNS-011', name: 'IR Obstacle Sensor',                category: 'Sensor',              unitCost:   95, warrantyMonths:  6, inStock: 90  },
+  { id: 'el-12', sku: 'ELEC-DSP-012', name: 'OLED Display 0.96in',               category: 'Display',             unitCost:  380, warrantyMonths:  6, inStock: 45  },
+  { id: 'el-13', sku: 'ELEC-PWR-013', name: '5V 2A Power Adapter',               category: 'Power Supply',        unitCost:  250, warrantyMonths: 12, inStock: 55  },
+  { id: 'el-14', sku: 'ELEC-ACT-014', name: 'Servo Motor SG90',                  category: 'Actuator',            unitCost:  180, warrantyMonths:  6, inStock: 75  },
+  { id: 'el-15', sku: 'ELEC-SNS-015', name: 'LDR Photoresistor Kit',             category: 'Sensor',              unitCost:   60, warrantyMonths:  6, inStock: 120 },
 ];
 
 let maintenanceRequests: MaintenanceRequest[] = [
@@ -527,10 +550,42 @@ let borrowRecords: BorrowRecord[] = [
 
 let procurementRequests: ProcurementRequest[] = [
   {
-    id: 'pr-1', requestNo: 'PR-5001', requestedByLabId: 'lab-cs-1', requestedByLabName: 'CS Lab 1',
+    id: 'pr-1', requestNo: 'PR-2026-001', requestedByLabId: 'lab-cs-1', requestedByLabName: 'CS Lab 1',
     category: 'Purchase', createdDate: '2026-03-02', status: 'Pending Admin Approval',
-    notes: 'Need for AI/ML embedded lab kits.',
-    items: [{ itemId: 'el-4', sku: 'ELEC-RPI-004', productName: 'Raspberry Pi 5', quantity: 3, unitCost: 7600, warrantyMonths: 12 }]
+    notes: 'Needed for AI/ML embedded lab expansion — Batch 2026.',
+    items: [{ itemId: 'el-7', sku: 'ELEC-RPI-007', productName: 'Raspberry Pi 5', quantity: 5, unitCost: 7600, warrantyMonths: 12 }]
+  },
+  {
+    id: 'pr-2', requestNo: 'PR-2026-002', requestedByLabId: 'lab-ece', requestedByLabName: 'ECE Lab',
+    category: 'Purchase', createdDate: '2026-03-04', status: 'Approved by Admin',
+    notes: 'IoT practicals for 3rd year ECE students.',
+    items: [{ itemId: 'el-10', sku: 'ELEC-MCU-010', productName: 'ESP32 Wi-Fi Module', quantity: 20, unitCost: 950, warrantyMonths: 12 }]
+  },
+  {
+    id: 'pr-3', requestNo: 'PR-2026-003', requestedByLabId: 'lab-cs-1', requestedByLabName: 'CS Lab 1',
+    category: 'Purchase', createdDate: '2026-03-06', status: 'Sent to Purchase Dept',
+    purchaseDepartmentName: 'Central Purchase Dept',
+    notes: 'Replacement units for damaged kits in Lab-3.',
+    items: [{ itemId: 'el-1', sku: 'ELEC-KIT-001', productName: 'Arduino Uno R3', quantity: 15, unitCost: 1200, warrantyMonths: 12 }]
+  },
+  {
+    id: 'pr-4', requestNo: 'PR-2026-004', requestedByLabId: 'lab-mech', requestedByLabName: 'Mech Lab',
+    category: 'Purchase', createdDate: '2026-03-08', status: 'Accepted by Purchase Dept',
+    purchaseDepartmentName: 'Mechanical Stores',
+    notes: 'Robotics club semester project requirement.',
+    items: [{ itemId: 'el-14', sku: 'ELEC-ACT-014', productName: 'Servo Motor SG90', quantity: 30, unitCost: 180, warrantyMonths: 6 }]
+  },
+  {
+    id: 'pr-5', requestNo: 'PR-2026-005', requestedByLabId: 'lab-ece', requestedByLabName: 'ECE Lab',
+    category: 'Service', createdDate: '2026-03-10', status: 'Pending Admin Approval',
+    notes: 'Annual calibration service for oscilloscopes in ECE Lab.',
+    items: [{ itemId: 'svc-1', sku: 'SVC-CAL-001', productName: 'Oscilloscope Calibration Service', quantity: 4, unitCost: 2500, warrantyMonths: 0 }]
+  },
+  {
+    id: 'pr-6', requestNo: 'PR-2026-006', requestedByLabId: 'lab-cs-1', requestedByLabName: 'CS Lab 1',
+    category: 'Purchase', createdDate: '2026-03-01', status: 'Rejected by Purchase Dept',
+    notes: 'Weather-station practicals for Environmental Engineering lab.',
+    items: [{ itemId: 'el-9', sku: 'ELEC-SNS-009', productName: 'DHT11 Temperature & Humidity Sensor', quantity: 25, unitCost: 130, warrantyMonths: 6 }]
   }
 ];
 
@@ -637,6 +692,12 @@ export const api = {
   /** Register a callback to be invoked when any request returns 401 (session expired). */
   onUnauthorized(cb: () => void) { _onUnauthorized = cb; },
 
+  /** Register a callback invoked whenever a token refresh succeeds with new tokens. */
+  onTokenRefreshed(cb: (token: string, refreshToken: string) => void) { _onTokenRefreshed = cb; },
+
+  /** Proactively refresh the access token (e.g. on a timer before it expires). */
+  async proactiveRefresh(): Promise<boolean> { return tryRefreshToken(); },
+
   // ── Auth ─────────────────────────────────────────────────────────────────
   async login(email: string, password: string, _selectedRole?: Role): Promise<{ token: string; refreshToken: string; user: User }> {
     const res = await backendFetch('/auth/login', {
@@ -650,6 +711,20 @@ export const api = {
       token: data.access_token,
       refreshToken: data.refresh_token,
       user: { id: data.user.id, name: data.user.name ?? email, email: data.user.email ?? email, role, labId: data.user.lab_id }
+    };
+  },
+
+  async loginWithToken(token: string, refreshToken: string): Promise<{ token: string; refreshToken: string; user: User }> {
+    const res = await fetch(`${BASE_URL}/auth/me`, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail ?? 'Authentication failed. Ensure your Google account has a registered CampusLedger profile.');
+    const role = toAppRole(data.role ?? '');
+    return {
+      token,
+      refreshToken,
+      user: { id: data.id, name: data.name ?? data.email, email: data.email, role, labId: data.lab_id },
     };
   },
 
@@ -991,8 +1066,12 @@ export const api = {
   async getProcurementRequests(role: Role, labId?: string): Promise<ProcurementRequest[]> {
     const params = role === 'lab' && labId ? `?lab_id=${labId}` : '';
     const data = await backendGet<Record<string, unknown>[]>(`/purchase/orders${params}`);
-    if (data) return data.map(adaptProcurement);
-    if (role === 'lab') return delay(procurementRequests.filter((r) => r.requestedByLabId === labId));
+    if (data && data.length > 0) return data.map(adaptProcurement);
+    if (role === 'lab') {
+      const filtered = procurementRequests.filter((r) => r.requestedByLabId === labId);
+      // Fall back to all records when real labId doesn't match mock IDs
+      return delay(filtered.length > 0 ? filtered : [...procurementRequests]);
+    }
     if (role === 'purchase_dept') return delay(procurementRequests.filter((r) => r.status === 'Approved by Admin' || r.status === 'Sent to Purchase Dept'));
     return delay([...procurementRequests]);
   },
@@ -1591,5 +1670,27 @@ export const api = {
 
   async endUsageSession(usageLogId: string): Promise<UsageSession | null> {
     return backendPost<UsageSession>('/rfid/usage/end', { usage_log_id: usageLogId });
+  },
+
+  // ── Asset Utilization Intelligence ───────────────────────────────────────
+  async getAssetUtilization(labId?: string): Promise<{ month: string; items: AssetUtilizationItem[] }> {
+    const path = `/asset-utilization${labId ? `?lab_id=${encodeURIComponent(labId)}` : ''}`;
+    const data = await backendGet<{ month: string; items: AssetUtilizationItem[] }>(path);
+    if (data && data.items && data.items.length > 0) return data;
+
+    // Demo fallback — mirrors the backend seed data
+    const today = new Date();
+    const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const seedItems: AssetUtilizationItem[] = [
+      { asset_id: 'seed-1', asset_name: 'Dell OptiPlex 7090',       monthly_usage: 95.0, status: 'high_usage', recommendation: 'Asset is heavily utilised. Consider scheduling preventive maintenance.' },
+      { asset_id: 'seed-4', asset_name: '3D Printer Ender-3 Pro',   monthly_usage: 88.0, status: 'high_usage', recommendation: 'Asset is heavily utilised. Consider scheduling preventive maintenance.' },
+      { asset_id: 'seed-3', asset_name: 'Raspberry Pi 5 Node',      monthly_usage: 52.5, status: 'normal',    recommendation: undefined },
+      { asset_id: 'seed-6', asset_name: 'Lenovo ThinkCentre M70',   monthly_usage: 61.0, status: 'normal',    recommendation: undefined },
+      { asset_id: 'seed-8', asset_name: 'Thermal Camera FLIR E4',   monthly_usage: 24.0, status: 'normal',    recommendation: undefined },
+      { asset_id: 'seed-2', asset_name: 'Oscilloscope DSO-1052B',   monthly_usage: 14.0, status: 'underused', recommendation: 'Asset is under-utilised. Consider relocating to another lab with higher demand.' },
+      { asset_id: 'seed-5', asset_name: 'Arduino Kit Station',      monthly_usage: 10.0, status: 'underused', recommendation: 'Asset is under-utilised. Consider relocating to another lab with higher demand.' },
+      { asset_id: 'seed-7', asset_name: 'Digital Multimeter Pro',   monthly_usage:  7.5, status: 'underused', recommendation: 'Asset is under-utilised. Consider relocating to another lab with higher demand.' },
+    ];
+    return { month, items: seedItems };
   },
 };

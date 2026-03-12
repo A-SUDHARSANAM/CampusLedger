@@ -3,6 +3,7 @@ import { DataTable, type TableColumn } from '../../components/tables';
 import { api } from '../../services/api';
 import type { LabInfo } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 interface Department { id: string; name: string; }
 
@@ -25,6 +26,7 @@ export function AdminLabsPage() {
   }
 
   useEffect(() => { load(); }, []);
+  useAutoRefresh(load);
 
   function openModal() {
     setForm({ lab_name: '', department_id: departments[0]?.id ?? '', location: '' });

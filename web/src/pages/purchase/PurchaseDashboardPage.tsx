@@ -5,6 +5,7 @@ import { OCRScanner, type OCRResult } from '../../components/OCRScanner';
 import { api } from '../../services/api';
 import type { ProcurementRequest } from '../../types/domain';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 export function PurchaseDashboardPage() {
   const { t } = useLanguage();
@@ -21,6 +22,8 @@ export function PurchaseDashboardPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useAutoRefresh(load);
 
   async function handleUploadInvoice(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -103,8 +106,8 @@ export function PurchaseDashboardPage() {
         const purchaseDept = f.purchase_department ?? '';
         const params = new URLSearchParams();
         if (itemName) params.set('item_name', itemName);
-        if (qty) params.set('quantity', qty);
-        if (price) params.set('estimated_cost', price);
+        if (qty) params.set('quantity', String(qty));
+        if (price) params.set('estimated_cost', String(price));
         if (purchaseDept) params.set('purchase_department_name', purchaseDept);
         return (
           <section className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>

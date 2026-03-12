@@ -1,6 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, GraduationCap, Trophy, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Eye, EyeOff, Trophy, AlertTriangle, CheckCircle2, Users, Lock, Bell, Cpu, FlaskConical, BookOpen, Settings, ClipboardList } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
+
+const LOGIN_GRADIENTS = [
+  'linear-gradient(135deg, #0d2818 0%, #1a1040 40%, #2d0a30 70%, #081520 100%)',
+  'linear-gradient(135deg, #1a0828 0%, #0d2a38 40%, #2a0a40 70%, #100818 100%)',
+  'linear-gradient(135deg, #08201a 0%, #220838 40%, #0a2030 70%, #180a20 100%)',
+  'linear-gradient(135deg, #0d2818 0%, #1a1040 40%, #2d0a30 70%, #081520 100%)',
+];
+
+const LOGIN_ORBS = [
+  { x: '10%',  y: '15%', size: 300, color: 'rgba(244,63,94,0.16)'  },
+  { x: '70%',  y: '55%', size: 360, color: 'rgba(20,184,166,0.13)' },
+  { x: '38%',  y: '78%', size: 240, color: 'rgba(251,146,60,0.11)' },
+];
+
+const LOGIN_BUBBLES = [
+  { Icon: Users,         label: 'Users',       top: '8%',  left: '5%',   delay: 0    },
+  { Icon: Lock,          label: 'Security',    top: '18%', right: '6%',  delay: 0.5  },
+  { Icon: FlaskConical,  label: 'Labs',        top: '55%', left: '4%',   delay: 0.9  },
+  { Icon: Cpu,           label: 'Devices',     top: '65%', right: '5%',  delay: 0.3  },
+  { Icon: Bell,          label: 'Alerts',      top: '80%', left: '16%',  delay: 1.1  },
+  { Icon: BookOpen,      label: 'Reports',     top: '12%', right: '20%', delay: 1.3  },
+  { Icon: ClipboardList, label: 'Tasks',       top: '75%', right: '18%', delay: 0.7  },
+  { Icon: Settings,      label: 'Config',      top: '42%', left: '3%',   delay: 1.5  },
+];
 import { useAuth } from '../hooks/useAuth';
 import { api } from '../services/api';
 import type { Role } from '../types/auth';
@@ -238,9 +264,11 @@ function ReportIssueForm({ onClose }: { onClose: () => void }) {
 export function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [searchParams] = useSearchParams();
 
   const [showReport, setShowReport] = useState(false);
-  const [isRegister, setIsRegister] = useState(false);
+  // Honour ?mode=register (Google-auth redirect for new users) or tab default
+  const [isRegister, setIsRegister] = useState(searchParams.get('mode') === 'register');
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
   const [email, setEmail]       = useState('');
@@ -257,6 +285,17 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError]         = useState('');
   const [submitted, setSubmitted] = useState(false);
+
+  // Pre-fill email/name when coming from Google callback (account not yet registered)
+  useEffect(() => {
+    const gEmail = searchParams.get('google_email');
+    const gName  = searchParams.get('google_name');
+    if (gEmail) { setRegEmail(gEmail); setIsRegister(true); }
+    if (gName)  setFullName(gName);
+    const err = searchParams.get('error');
+    if (err === 'google_not_registered') setError('No CampusLedger account found for your Google email. Please register below.');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const switchTab = (toRegister: boolean) => {
     setIsRegister(toRegister);
@@ -309,13 +348,103 @@ export function Login() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setError(
+        'Google Sign-In requires Supabase to be configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.'
+      );
+      return;
+    }
+    setError('');
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (oauthError) setError(oauthError.message);
+  };
+
   return (
-    <div className="auth-page">
-      <div className="auth-wrap">
+    <motion.div
+      className="auth-page"
+      initial={{ background: LOGIN_GRADIENTS[0] }}
+      animate={{ background: LOGIN_GRADIENTS }}
+      transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
+      style={{ position: 'relative', overflow: 'hidden' }}
+    >
+      {/* Ambient orbs */}
+      {LOGIN_ORBS.map((orb, i) => (
+        <motion.div
+          key={i}
+          style={{
+            position: 'absolute',
+            left: orb.x,
+            top: orb.y,
+            width: orb.size,
+            height: orb.size,
+            borderRadius: '50%',
+            background: orb.color,
+            filter: 'blur(72px)',
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+          animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
+          transition={{ duration: 7 + i * 2, repeat: Infinity, ease: 'easeInOut', delay: i * 1.5 }}
+        />
+      ))}
+
+      {/* Grid overlay */}
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 1,
+        backgroundImage: 'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
+        backgroundSize: '60px 60px',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Floating icon bubbles */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}>
+        {LOGIN_BUBBLES.map(({ Icon, label, top, left, right, delay }: any) => (
+          <motion.div
+            key={label}
+            style={{
+              position: 'absolute', top, left, right,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              userSelect: 'none',
+            }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: [0, 0.55, 0.38, 0.55], y: [20, 0, -9, 0] }}
+            transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay }}
+          >
+            <div style={{
+              background: 'rgba(255,255,255,0.07)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.13)',
+              borderRadius: 14,
+              padding: '10px 12px',
+            }}>
+              <Icon size={20} color="rgba(255,255,255,0.72)" />
+            </div>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.42)', fontWeight: 500, letterSpacing: '0.03em' }}>{label}</span>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="auth-wrap" style={{ position: 'relative', zIndex: 3 }}>
         {/* ── Brand ── */}
         <div className="brand">
           <div className="brand-badge">
-            <GraduationCap size={36} />
+            <img
+              src="/logo.png"
+              alt="CampusLedger"
+              style={{
+                width: 76,
+                height: 76,
+                objectFit: 'contain',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.95)',
+                padding: 10,
+                boxShadow: '0 8px 32px rgba(20,184,166,0.35)',
+              }}
+            />
           </div>
           <h1>CampusLedger</h1>
           <p>Asset &amp; Inventory Management System</p>
@@ -324,22 +453,33 @@ export function Login() {
         {/* ── Leaderboard ── */}
         <TopHelpfulStudents />
 
-        {/* ── Auth tabs ── */}
-        <div className="auth-tabs">
-          <button className={`btn secondary-btn tab-btn ${!isRegister ? 'active' : ''}`} onClick={() => switchTab(false)} type="button">
-            Sign In
-          </button>
-          <button className={`btn secondary-btn tab-btn ${isRegister ? 'active' : ''}`} onClick={() => switchTab(true)} type="button">
-            Register
-          </button>
-        </div>
-
-        {/* ── Auth card ── */}
-        <div className="auth-card">
+        {/* ── Auth card with AnimatePresence slide ── */}
+        <AnimatePresence mode="wait" initial={false}>
           {isRegister ? (
-            <>
+            <motion.div
+              key="register"
+              className="auth-card"
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -40 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
               <h2>Create Account</h2>
               <p className="auth-subtitle">Fill in your details to register</p>
+
+              {/* Google sign-up */}
+              <button className="auth-google-btn" type="button" onClick={handleGoogleSignIn}>
+                <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.1 7.1 29.3 5 24 5 12.9 5 4 13.9 4 25s8.9 20 20 20 20-8.9 20-20c0-1.5-.2-2.9-.4-4.5z"/>
+                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 19 13 24 13c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.1 7.1 29.3 5 24 5 16.3 5 9.7 9.2 6.3 14.7z"/>
+                  <path fill="#4CAF50" d="M24 45c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 36.6 26.8 37.6 24 37.6c-5.2 0-9.6-3.4-11.2-8.1l-6.5 5C9.8 41 16.4 45 24 45z"/>
+                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.4l6.2 5.2C41.4 35.7 44 30.8 44 25c0-1.5-.2-2.9-.4-4.5z"/>
+                </svg>
+                Sign up with Google
+              </button>
+
+              <div className="auth-divider"><span>or sign up with email</span></div>
+
               <form onSubmit={handleRegister}>
                 <div className="form-field">
                   <label className="label" htmlFor="fullName">Full Name</label>
@@ -368,15 +508,43 @@ export function Login() {
                     </button>
                   </div>
                 </div>
-                <button className="btn primary-btn" disabled={isLoading} type="submit">{isLoading ? 'Creating Account...' : 'Create Account'}</button>
+                <button className="btn primary-btn" disabled={isLoading} type="submit" style={{ marginTop: 18 }}>
+                  {isLoading ? 'Creating Account...' : 'Create Account'}
+                </button>
                 {error ? <p className="error-text">{error}</p> : null}
               </form>
-            </>
+
+              <p className="auth-switch">
+                Already have an account?{' '}
+                <button type="button" onClick={() => switchTab(false)}>Sign in</button>
+              </p>
+            </motion.div>
           ) : (
-            <>
+            <motion.div
+              key="signin"
+              className="auth-card"
+              initial={{ opacity: 0, x: -40 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 40 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
               <h2>Sign In</h2>
               <p className="auth-subtitle">Enter your credentials to access the dashboard</p>
               {registerSuccess ? <div className="success-banner">Account created successfully! Please sign in below.</div> : null}
+
+              {/* Google sign-in */}
+              <button className="auth-google-btn" type="button" onClick={handleGoogleSignIn}>
+                <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                  <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.1 7.1 29.3 5 24 5 12.9 5 4 13.9 4 25s8.9 20 20 20 20-8.9 20-20c0-1.5-.2-2.9-.4-4.5z"/>
+                  <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 19 13 24 13c3.1 0 5.8 1.1 7.9 2.9l5.7-5.7C34.1 7.1 29.3 5 24 5 16.3 5 9.7 9.2 6.3 14.7z"/>
+                  <path fill="#4CAF50" d="M24 45c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 36.6 26.8 37.6 24 37.6c-5.2 0-9.6-3.4-11.2-8.1l-6.5 5C9.8 41 16.4 45 24 45z"/>
+                  <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.4l6.2 5.2C41.4 35.7 44 30.8 44 25c0-1.5-.2-2.9-.4-4.5z"/>
+                </svg>
+                Sign in with Google
+              </button>
+
+              <div className="auth-divider"><span>or sign in with email</span></div>
+
               <form onSubmit={handleLogin}>
                 <div className="form-field">
                   <label className="label" htmlFor="email">Email</label>
@@ -391,12 +559,19 @@ export function Login() {
                     </button>
                   </div>
                 </div>
-                <button className="btn primary-btn" disabled={isLoading} type="submit">{isLoading ? 'Signing in...' : 'Sign In'}</button>
+                <button className="btn primary-btn" disabled={isLoading} type="submit" style={{ marginTop: 18 }}>
+                  {isLoading ? 'Signing in...' : 'Sign In'}
+                </button>
                 {error ? <p className="error-text">{error}</p> : null}
               </form>
-            </>
+
+              <p className="auth-switch">
+                Don&apos;t have an account?{' '}
+                <button type="button" onClick={() => switchTab(true)}>Sign up &rarr;</button>
+              </p>
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
 
         <p className="auth-footer">(c) 2026 CampusLedger - Smart Campus Asset Management</p>
       </div>
@@ -407,6 +582,7 @@ export function Login() {
         onClick={() => setShowReport(true)}
         type="button"
         aria-label="Report Issue as Student"
+        style={{ zIndex: 10 }}
       >
         <AlertTriangle size={20} />
         <span>Report Issue as Student</span>
@@ -414,12 +590,12 @@ export function Login() {
 
       {/* ── Report Issue modal ── */}
       {showReport && (
-        <div className="issue-modal-overlay" onClick={() => setShowReport(false)}>
+        <div className="issue-modal-overlay" onClick={() => setShowReport(false)} style={{ zIndex: 20 }}>
           <div className="issue-modal-panel" onClick={(e) => e.stopPropagation()}>
             <ReportIssueForm onClose={() => setShowReport(false)} />
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

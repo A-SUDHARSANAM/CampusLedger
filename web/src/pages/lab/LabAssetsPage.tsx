@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import type { BorrowItem, BorrowRecord, ElectronicsCatalogItem } from '../../types/domain';
 import { downloadSimplePdf } from '../../utils/pdf';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 
 type CartLine = ElectronicsCatalogItem & { quantity: number };
 
@@ -32,6 +33,8 @@ export function LabAssetsPage() {
   useEffect(() => {
     loadData();
   }, [user?.labId]);
+
+  useAutoRefresh(loadData);
 
   function addToCart(item: ElectronicsCatalogItem) {
     setCart((prev) => {
