@@ -9,9 +9,15 @@ supabase==2.10.0
 python-jose[cryptography]==3.3.0
 
 # Settings
+<<<<<<< HEAD
 pydantic<3.0
 pydantic-settings>=2.5.0
 pydantic[email]<3.0
+=======
+pydantic>=2.6,<3
+pydantic-settings==2.5.0
+pydantic[email]==2.7.4
+>>>>>>> 4e794ba33954f3dc3ac0c08025d26ba3e19a19b6
 
 # Utilities
 python-multipart==0.0.20
