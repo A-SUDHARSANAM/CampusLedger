@@ -38,6 +38,8 @@ export function ServiceTasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<MaintenanceRequest[]>([]);
   const [remarkInputs, setRemarkInputs] = useState<Record<string, string>>({});
+  const [proofInputs, setProofInputs] = useState<Record<string, File | null>>({});
+  const [pageMessage, setPageMessage] = useState('');
 
   // ── QR scan state ──────────────────────────────────────────────────────────
   const [showScanner, setShowScanner] = useState(false);
@@ -64,7 +66,17 @@ export function ServiceTasksPage() {
     const remarks = remarkInputs[row.id]?.trim()
       || (status === 'In Progress' ? 'Technician started diagnostics' : 'Issue resolved and verified');
     await api.updateMaintenanceStatus('service', row.requestId, status, remarks);
+
+    if (status === 'Completed' && proofInputs[row.id]) {
+      try {
+        await api.uploadMaintenanceProof(row.requestId, proofInputs[row.id] as File);
+      } catch (err: unknown) {
+        setPageMessage(err instanceof Error ? `Task completed, but proof upload failed: ${err.message}` : 'Task completed, but proof upload failed.');
+      }
+    }
+
     setRemarkInputs((prev) => { const next = { ...prev }; delete next[row.id]; return next; });
+    setProofInputs((prev) => { const next = { ...prev }; delete next[row.id]; return next; });
     await load();
   }
 
@@ -192,6 +204,14 @@ export function ServiceTasksPage() {
                 value={remarkInputs[row.id] ?? ''}
                 onChange={(e) => setRemarkInputs((prev) => ({ ...prev, [row.id]: e.target.value }))}
               />
+              <input
+                className="input"
+                type="file"
+                accept="image/*"
+                aria-label={t('addProof', 'Add Proof')}
+                onChange={(e) => setProofInputs((prev) => ({ ...prev, [row.id]: e.target.files?.[0] ?? null }))}
+                style={{ maxWidth: 180, padding: '4px 8px' }}
+              />
               <button
                 className="btn primary-btn mini-btn"
                 type="button"
@@ -238,6 +258,7 @@ export function ServiceTasksPage() {
       </section>
 
       <DataTable data={tasks} columns={columns} title={t('serviceTasksTitle', 'Service Tasks')} subtitle={t('serviceTasksDesc', 'Pending and active requests assigned to you by admin')} />
+      {pageMessage ? <p className="settings-status">{pageMessage}</p> : null}
 
       {/* ── QR Scanner Modal ──────────────────────────────────────────── */}
       {showScanner && (

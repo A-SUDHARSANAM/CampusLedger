@@ -587,19 +587,27 @@ def scan_qr(
 @router.post(
     "/{request_id}/upload-image",
     response_model=MaintenanceOut,
-    summary="Attach an image to a maintenance request (lab technician)",
+    summary="Attach an image/proof to a maintenance request",
 )
 def upload_image(
     request_id: str,
     image: UploadFile = File(..., description="Issue photo (JPEG / PNG / WebP)"),
     sb: Client = Depends(get_admin_client),
-    current_user: dict = Depends(_require_lab_tech),
+    current_user: dict = Depends(require_role("lab_technician", "service_staff")),
 ):
-    existing = sb.table("maintenance_requests").select("id, reported_by").eq("id", request_id).maybe_single().execute()
+    existing = sb.table("maintenance_requests").select("id, reported_by, assigned_staff").eq("id", request_id).maybe_single().execute()
     if not existing.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Maintenance request not found")
-    if existing.data.get("reported_by") != current_user["id"]:    # correct DB column
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only attach images to your own requests")
+
+    role = current_user.get("role")
+    if role == "lab_technician":
+        if existing.data.get("reported_by") != current_user["id"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only attach images to your own requests")
+    elif role == "service_staff":
+        if existing.data.get("assigned_staff") != current_user["id"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only attach proof to requests assigned to you")
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed")
 
     public_url = upload_file(sb, Bucket.MAINTENANCE_IMAGES, request_id, image)
 

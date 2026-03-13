@@ -71,7 +71,11 @@ def extract_invoice_data(image_bytes: bytes) -> dict:
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     if openai_key:
         logger.info("OCR engine: OpenAI GPT-4 Vision")
-        return _extract_openai(image_bytes, openai_key)
+        try:
+            return _extract_openai(image_bytes, openai_key)
+        except Exception as exc:
+            # Keep OCR usable even when OpenAI SDK/API is unavailable.
+            logger.warning("OpenAI OCR unavailable (%s) - falling back to Tesseract", exc)
 
     logger.info("OCR engine: Tesseract")
     return _extract_tesseract(image_bytes)

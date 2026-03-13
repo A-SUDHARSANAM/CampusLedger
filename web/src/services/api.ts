@@ -1041,6 +1041,43 @@ export const api = {
     return adaptMaintenance(data);
   },
 
+  async uploadMaintenanceProof(requestId: string, file: File): Promise<MaintenanceRequest> {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/maintenance/${requestId}/upload-image`, {
+        method: 'POST',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        body: formData,
+      });
+    } catch {
+      throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+    }
+
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (!refreshed) handleUnauthorized();
+      try {
+        res = await fetch(`${BASE_URL}/maintenance/${requestId}/upload-image`, {
+          method: 'POST',
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          body: formData,
+        });
+      } catch {
+        throw new Error('Cannot reach the server. Make sure the backend is running on port 8000.');
+      }
+    }
+
+    if (res.status === 401) handleUnauthorized();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(extractDetail(data, `Proof upload failed (${res.status})`));
+    }
+    return adaptMaintenance(data as Record<string, unknown>);
+  },
+
   /** Fetch the QR code for an assigned maintenance request (admin only). */
   async getMaintenanceQR(requestId: string): Promise<{ request_id: string; qr_base64: string } | null> {
     return backendGet<{ request_id: string; qr_base64: string }>(`/maintenance/${requestId}/qr`);

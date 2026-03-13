@@ -29,6 +29,7 @@ export function LabMaintenancePage() {
   const [modalIssue, setModalIssue] = useState('');
   const [modalPriority, setModalPriority] = useState<Priority>('Medium');
   const [modalIssueType, setModalIssueType] = useState<'service_request' | 'purchase_request'>('service_request');
+  const [modalProofFile, setModalProofFile] = useState<File | null>(null);
   const [modalError, setModalError] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
 
@@ -103,6 +104,7 @@ export function LabMaintenancePage() {
     setModalIssue('');
     setModalPriority('Medium');
     setModalIssueType('service_request');
+    setModalProofFile(null);
     setModalError('');
     setShowModal(true);
   }
@@ -114,13 +116,22 @@ export function LabMaintenancePage() {
     setModalError('');
     setModalSaving(true);
     try {
-      await api.raiseMaintenanceRequest('lab', {
+      const created = await api.raiseMaintenanceRequest('lab', {
         assetId: modalAssetId,
         labId: user?.labId ?? '',
         issue: modalIssue.trim(),
         priority: modalPriority,
         issueType: modalIssueType,
       });
+
+      if (modalProofFile) {
+        try {
+          await api.uploadMaintenanceProof(created.requestId, modalProofFile);
+        } catch (uploadErr: unknown) {
+          setStatusMessage(uploadErr instanceof Error ? `Request created, but proof upload failed: ${uploadErr.message}` : 'Request created, but proof upload failed.');
+        }
+      }
+
       setShowModal(false);
       setStatusMessage(t('maintenanceRequestCreated', 'Maintenance request submitted.'));
       await loadData();
@@ -407,6 +418,16 @@ export function LabMaintenancePage() {
                   onChange={(e) => setModalIssue(e.target.value)}
                   placeholder={t('describeIssue', 'Describe the problem in detail…')}
                   required
+                />
+              </label>
+
+              <label className="form-label">
+                {t('addProof', 'Add Proof')}
+                <input
+                  className="input"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setModalProofFile(e.target.files?.[0] ?? null)}
                 />
               </label>
 

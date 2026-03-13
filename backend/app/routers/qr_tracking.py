@@ -153,7 +153,7 @@ def get_asset_qr_code(
     _: dict = Depends(_require_admin_or_tech),
 ):
     """Returns a base64 PNG of the QR code that encodes the public asset URL."""
-    asset_row = sb.table("assets").select("id, asset_name").eq("id", asset_id).maybe_single().execute()
+    asset_row = sb.table("assets").select("id, asset_name, qr_code").eq("id", asset_id).maybe_single().execute()
     if not asset_row.data:
         raise HTTPException(status_code=404, detail="Asset not found")
 
@@ -238,13 +238,23 @@ def public_asset_info(
     No authentication required.  Called when a QR code is scanned by any device.
     Returns basic asset info so anyone with a QR scanner can see what the asset is.
     """
-    asset_row = (
-        sb.table("assets")
-        .select("id, asset_name, status, category_id, lab_id, location_id, serial_number, condition_rating, condition_notes")
-        .eq("id", asset_id)
-        .maybe_single()
-        .execute()
-    )
+    try:
+        asset_row = (
+            sb.table("assets")
+            .select("id, asset_name, status, category_id, lab_id, location_id, serial_number, condition_rating, condition_notes")
+            .eq("id", asset_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception:
+        # Backward-compat fallback when optional columns (e.g. condition_notes) are absent.
+        asset_row = (
+            sb.table("assets")
+            .select("id, asset_name, status, category_id, lab_id, location_id, serial_number, condition_rating")
+            .eq("id", asset_id)
+            .maybe_single()
+            .execute()
+        )
     if not asset_row.data:
         raise HTTPException(status_code=404, detail="Asset not found")
 
@@ -252,18 +262,27 @@ def public_asset_info(
 
     cat_name: Optional[str] = None
     if a.get("category_id"):
-        cr = sb.table("asset_categories").select("category_name").eq("id", a["category_id"]).maybe_single().execute()
-        cat_name = cr.data["category_name"] if cr.data else None
+        try:
+            cr = sb.table("asset_categories").select("category_name").eq("id", a["category_id"]).maybe_single().execute()
+            cat_name = cr.data["category_name"] if cr.data else None
+        except Exception:
+            cat_name = None
 
     lab_name: Optional[str] = None
     if a.get("lab_id"):
-        lr = sb.table("labs").select("lab_name").eq("id", a["lab_id"]).maybe_single().execute()
-        lab_name = lr.data["lab_name"] if lr.data else None
+        try:
+            lr = sb.table("labs").select("lab_name").eq("id", a["lab_id"]).maybe_single().execute()
+            lab_name = lr.data["lab_name"] if lr.data else None
+        except Exception:
+            lab_name = None
 
     loc_name: Optional[str] = None
     if a.get("location_id"):
-        locr = sb.table("locations").select("name").eq("id", a["location_id"]).maybe_single().execute()
-        loc_name = locr.data["name"] if locr.data else None
+        try:
+            locr = sb.table("locations").select("name").eq("id", a["location_id"]).maybe_single().execute()
+            loc_name = locr.data["name"] if locr.data else None
+        except Exception:
+            loc_name = None
 
     # Log the public QR scan (non-fatal if table doesn't exist yet)
     try:

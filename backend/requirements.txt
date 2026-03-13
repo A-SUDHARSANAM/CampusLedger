@@ -26,8 +26,8 @@ pytesseract==0.3.13
 Pillow>=10.0.0
 # OpenCV for image preprocessing (grayscale + threshold)
 opencv-python>=4.9.0
-# For OpenAI GPT-4 Vision engine (optional, higher accuracy):
-# pip install openai
+# For OpenAI GPT-4 Vision engine (optional, higher accuracy)
+openai>=1.51.0
 
 # ── ML — Inventory Demand Prediction ─────────────────────────────────────────
 scikit-learn>=1.4.0

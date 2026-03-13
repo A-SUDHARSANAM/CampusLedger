@@ -86,11 +86,13 @@ def extract_from_bytes(image_bytes: bytes) -> dict:
             return _extract_openai(image_bytes, openai_key)
         except Exception as exc:
             err_str = str(exc)
-            # 429 quota-exceeded → silently fall back to Tesseract
-            if "429" in err_str or "insufficient_quota" in err_str or "quota" in err_str.lower():
-                logger.warning("OpenAI quota exceeded — falling back to Tesseract OCR")
+            # Fall back to local OCR if OpenAI SDK/API is unavailable.
+            if "openai package is required" in err_str.lower():
+                logger.warning("OpenAI SDK missing - falling back to Tesseract OCR")
+            elif "429" in err_str or "insufficient_quota" in err_str or "quota" in err_str.lower():
+                logger.warning("OpenAI quota exceeded - falling back to Tesseract OCR")
             else:
-                raise  # unexpected error — propagate
+                logger.warning("OpenAI OCR failed (%s) - falling back to local OCR", exc)
 
     logger.info("OCR engine: OpenCV + Tesseract")
     return _extract_tesseract_from_bytes(image_bytes)
