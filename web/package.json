@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^0.577.0",
     "@supabase/supabase-js": "^2.99.1",
     "framer-motion": "^12.35.2",
     "jsqr": "^1.4.0",
-    "lucide-react": "^0.575.0",
     "react": "^19.2.4",
     "react-countup": "^6.5.3",
     "react-dom": "^19.2.4",
@@ -25,6 +25,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "playwright": "^1.58.2",
+    "vite": "^7.3.1",
     "vite-plugin-pwa": "^1.2.0"
   }
 }
