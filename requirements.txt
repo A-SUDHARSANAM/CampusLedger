@@ -1,0 +1,3 @@
+# Root requirements for Render deploy
+# Keep backend dependency set centralized.
+-r backend/requirements.txt
